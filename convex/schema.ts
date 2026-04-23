@@ -105,4 +105,31 @@ export default defineSchema({
     details: v.string(),
     timestamp: v.number(),
   }).index("by_admin", ["adminId"]),
+
+  // SGX (Chessa) → EcoCash withdrawal pipeline: real-time via Convex subscription on this table
+  ecocashPayouts: defineTable({
+    userId: v.id("users"),
+    transactionId: v.id("transactions"),
+    idempotencyKey: v.string(),
+    ecocashPhone: v.string(), // E.164 e.g. +263771234567
+    firstName: v.string(),
+    lastName: v.string(),
+    amountUsd: v.number(),
+    status: v.union(
+      v.literal("queued"),
+      v.literal("sgx_submitted"),
+      v.literal("ecocash_paid"),
+      v.literal("failed"),
+    ),
+    sgxError: v.optional(v.string()),
+    sgxOrderId: v.optional(v.string()),
+    /** SGX: TRC20 USDT float tx to Chessa’s deposit (audit), not the player’s */
+    tronFloatTxid: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_idempotency", ["idempotencyKey"])
+    .index("by_user", ["userId"])
+    .index("by_user_created", ["userId", "createdAt"])
+    .index("by_transaction", ["transactionId"]),
 });
