@@ -1,6 +1,7 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useState } from "react";
+import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
 
@@ -9,10 +10,40 @@ const HOUSE_BANK_USER_ID = "ks72m74heawkx1p7n524fbtnt97mj6y1";
 export default function AdminPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const fundViaEcocash = useAction(api.aurum.adminFundWalletViaEcocash);
   const currentUser = useQuery(api.aurum.getCurrentUser);
   const houseWallet = useQuery(api.aurum.getHouseWalletBalance, {
     houseUserId: HOUSE_BANK_USER_ID,
   });
+  const sgxConfig = useQuery(api.aurum.getSgxApiConfigStatus);
+  const [payerPhone, setPayerPhone] = useState("");
+  const [fiatAmount, setFiatAmount] = useState("10.00");
+  const [cryptoAmount, setCryptoAmount] = useState("9.95");
+  const [email, setEmail] = useState("admin@pennygame.app");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [fundResult, setFundResult] = useState<string | null>(null);
+  const [fundError, setFundError] = useState<string | null>(null);
+
+  const handleFundWallet = async () => {
+    setFundError(null);
+    setFundResult(null);
+    setIsSubmitting(true);
+    try {
+      const result = await fundViaEcocash({
+        payerPhone,
+        fiatAmount: Number(fiatAmount),
+        cryptoAmount: Number(cryptoAmount),
+        email: email.trim() || undefined,
+      });
+      setFundResult(
+        `Started successfully. Ref: ${String(result.referenceNumber || "N/A")} | Order: ${String(result.orderId || "N/A")}`,
+      );
+    } catch (error) {
+      setFundError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (isLoading || (isAuthenticated && currentUser === undefined)) {
     return (
@@ -92,6 +123,83 @@ export default function AdminPage() {
               Current crypto bank float (live)
             </div>
           </div>
+
+          <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6">
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
+              SGX API Configuration Status
+            </h2>
+            <div className="mt-3 space-y-2 text-sm">
+              <p className="text-slate-600 dark:text-slate-300">
+                Base: <span className="font-mono">{sgxConfig?.baseUrl ?? "-"}</span>
+              </p>
+              <p className="text-slate-600 dark:text-slate-300">
+                On-ramp: <span className="font-mono">{sgxConfig?.onRampUrl ?? "-"}</span>
+              </p>
+              <p className="text-slate-600 dark:text-slate-300">
+                Off-ramp: <span className="font-mono">{sgxConfig?.offRampUrl ?? "-"}</span>
+              </p>
+              <p className={sgxConfig?.hasPartnerKey ? "text-emerald-600" : "text-red-600"}>
+                Partner key: {sgxConfig?.hasPartnerKey ? "set" : "missing"}
+              </p>
+              <p className={sgxConfig?.hasOnRampWalletBep20 ? "text-emerald-600" : "text-red-600"}>
+                On-ramp BEP20 wallet: {sgxConfig?.hasOnRampWalletBep20 ? "set" : "missing"}
+              </p>
+              <p className={sgxConfig?.hasTreasuryTronPrivateKey ? "text-emerald-600" : "text-red-600"}>
+                Treasury Tron private key: {sgxConfig?.hasTreasuryTronPrivateKey ? "set" : "missing"}
+              </p>
+              <p className={sgxConfig?.hasTreasuryTronAddress ? "text-emerald-600" : "text-red-600"}>
+                Treasury Tron address: {sgxConfig?.hasTreasuryTronAddress ? "set" : "missing"}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6">
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
+            Fund Penny Wallet via EcoCash (SGX on-ramp)
+          </h2>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+            Calls SGX <span className="font-mono">/api/v0/ecocash-to-crypto</span> and credits crypto to your configured BEP-20 wallet.
+          </p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input
+              value={payerPhone}
+              onChange={(e) => setPayerPhone(e.target.value)}
+              placeholder="EcoCash phone e.g. 771234567"
+              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+            />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Payer email"
+              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+            />
+            <input
+              value={fiatAmount}
+              onChange={(e) => setFiatAmount(e.target.value)}
+              placeholder="USD amount e.g. 10.00"
+              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+            />
+            <input
+              value={cryptoAmount}
+              onChange={(e) => setCryptoAmount(e.target.value)}
+              placeholder="USDT quote e.g. 9.95"
+              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+            />
+          </div>
+          <button
+            onClick={handleFundWallet}
+            disabled={isSubmitting}
+            className="mt-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-md"
+          >
+            {isSubmitting ? "Starting..." : "Start EcoCash -> Crypto Funding"}
+          </button>
+          {fundResult && (
+            <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{fundResult}</p>
+          )}
+          {fundError && (
+            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{fundError}</p>
+          )}
         </div>
       </main>
     </div>
