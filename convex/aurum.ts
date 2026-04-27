@@ -330,3 +330,27 @@ export const getUserTransactions = query({
     return transactions;
   },
 });
+
+export const getHouseWalletBalance = query({
+  args: { houseUserId: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const currentUserId = identity.subject.split("|")[0] as Id<"users">;
+    const currentUser = await ctx.db.get(currentUserId);
+    if (!currentUser || currentUser.role !== "admin") {
+      return null;
+    }
+
+    const houseUser = await ctx.db.get(args.houseUserId as Id<"users">);
+    if (!houseUser) {
+      return null;
+    }
+
+    return {
+      balance: houseUser.balance || 0,
+      userId: houseUser._id,
+    };
+  },
+});

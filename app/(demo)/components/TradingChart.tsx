@@ -27,6 +27,7 @@ export default function TradingChart({
   onTradeComplete,
   onPlayersChange,
 }: TradingChartProps) {
+  const HOUSE_BANK_USER_ID = "ks72m74heawkx1p7n524fbtnt97mj6y1";
   // State from MarketChart
   const [currentPrice, setCurrentPrice] = useState(1.0825);
   const [priceHistory, setPriceHistory] = useState<number[]>([]);
@@ -36,6 +37,9 @@ export default function TradingChart({
   // State from PriceSimulator
   const currentUser = useQuery(api.aurum.getCurrentUser);
   const serverBalance = currentUser?.balance || 0;
+  const houseWallet = useQuery(api.aurum.getHouseWalletBalance, {
+    houseUserId: HOUSE_BANK_USER_ID,
+  });
   const withdrawFunds = useMutation(api.aurum.withdrawFunds);
   const depositFunds = useMutation(api.aurum.depositFunds);
   const adminDepositFunds = useMutation(api.aurum.adminDepositFunds);
@@ -210,7 +214,7 @@ export default function TradingChart({
       // Debit house by the payout amount (stake + profit)
       try {
         await adminWithdrawFunds({
-          userId: "ks72m74heawkx1p7n524fbtnt97mj6y1",
+          userId: HOUSE_BANK_USER_ID,
           amount: activeTrade.amount + userWinAmount,
           paymentMethod: "card-usd",
         });
@@ -232,7 +236,7 @@ export default function TradingChart({
       // Neutral: return player stake; also debit house to return stake back
       try {
         await adminWithdrawFunds({
-          userId: "ks72m74heawkx1p7n524fbtnt97mj6y1",
+          userId: HOUSE_BANK_USER_ID,
           amount: activeTrade.amount,
           paymentMethod: "card-usd",
         });
@@ -664,7 +668,7 @@ export default function TradingChart({
       // Credit house with the stake
       try {
         await adminDepositFunds({
-          userId: "ks72m74heawkx1p7n524fbtnt97mj6y1",
+          userId: HOUSE_BANK_USER_ID,
           amount: betAmount,
           paymentMethod: "card-usd",
         });
@@ -919,6 +923,19 @@ export default function TradingChart({
             ${serverBalance.toFixed(2)}
           </div>
         </div>
+        {currentUser?.role === "admin" && (
+          <div>
+            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              Penny Bank Wallet
+            </div>
+            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              ${(houseWallet?.balance ?? 0).toFixed(2)}
+            </div>
+            <div className="text-xs text-slate-500 dark:text-slate-400">
+              Live crypto-bank float
+            </div>
+          </div>
+        )}
         <div className="text-right">
           <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
             Current Price
