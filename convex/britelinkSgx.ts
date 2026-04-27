@@ -34,6 +34,11 @@ export function getSgxV0CryptoToEcocashUrl(): string {
   return `${getSgxV0BaseUrl()}/api/v0/crypto-to-ecocash`;
 }
 
+/** Full URL for EcoCash → USDT on-ramp. */
+export function getSgxV0EcocashToCryptoUrl(): string {
+  return `${getSgxV0BaseUrl()}/api/v0/ecocash-to-crypto`;
+}
+
 export function getSgxV0ApiKey(): string | undefined {
   return (
     process.env.SGX_V0_API_KEY ?? process.env.SGX_V0_PARTNER_PENNYGAME

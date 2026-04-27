@@ -1,8 +1,14 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server";
+import { query, mutation, action } from "./_generated/server";
 import { api } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
+import {
+  getSgxV0ApiKey,
+  getSgxV0BaseUrl,
+  getSgxV0CryptoToEcocashUrl,
+  getSgxV0EcocashToCryptoUrl,
+} from "./britelinkSgx";
 
 /*
   Core functions for Aurum Capital – an enterprise-ready real-time betting platform.
@@ -351,6 +357,108 @@ export const getHouseWalletBalance = query({
     return {
       balance: houseUser.balance || 0,
       userId: houseUser._id,
+    };
+  },
+});
+
+export const getSgxApiConfigStatus = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+
+    const currentUserId = identity.subject.split("|")[0] as Id<"users">;
+    const currentUser = await ctx.db.get(currentUserId);
+    if (!currentUser || currentUser.role !== "admin") {
+      return null;
+    }
+
+    return {
+      hasPartnerKey: Boolean(getSgxV0ApiKey()),
+      hasTreasuryTronPrivateKey: Boolean(
+        process.env.PENNY_TREASURY_TRON_PRIVATE_KEY,
+      ),
+      hasTreasuryTronAddress: Boolean(process.env.PENNY_TREASURY_TRC20_ADDRESS),
+      hasOnRampWalletBep20: Boolean(process.env.PENNY_ONRAMP_WALLET_BEP20),
+      onRampUrl: getSgxV0EcocashToCryptoUrl(),
+      offRampUrl: getSgxV0CryptoToEcocashUrl(),
+      baseUrl: getSgxV0BaseUrl(),
+    };
+  },
+});
+
+export const adminFundWalletViaEcocash = action({
+  args: {
+    payerPhone: v.string(),
+    fiatAmount: v.number(),
+    cryptoAmount: v.number(),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const currentUser = await ctx.runQuery(api.aurum.getCurrentUser);
+    if (!currentUser || currentUser.role !== "admin") {
+      throw new Error("Unauthorized: Admin access required");
+    }
+
+    const apiKey = getSgxV0ApiKey();
+    if (!apiKey) {
+      throw new Error(
+        "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
+      );
+    }
+
+    const walletAddress = process.env.PENNY_ONRAMP_WALLET_BEP20?.trim();
+    if (!walletAddress) {
+      throw new Error(
+        "Set PENNY_ONRAMP_WALLET_BEP20 (BEP-20 0x wallet) in Convex environment",
+      );
+    }
+
+    const phone = args.payerPhone.trim();
+    const fiatAmount = Number(args.fiatAmount.toFixed(2));
+    const cryptoAmount = Number(args.cryptoAmount.toFixed(6));
+    if (!phone) throw new Error("payerPhone is required");
+    if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
+      throw new Error("fiatAmount must be greater than 0");
+    }
+    if (!Number.isFinite(cryptoAmount) || cryptoAmount < 0) {
+      throw new Error("cryptoAmount must be >= 0");
+    }
+
+    const res = await fetch(getSgxV0EcocashToCryptoUrl(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        walletAddress,
+        payerPhone: phone,
+        fiatAmount: fiatAmount.toFixed(2),
+        cryptoAmount: cryptoAmount.toFixed(6),
+        email: args.email?.trim() || "admin@pennygame.app",
+      }),
+    });
+
+    const text = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      // ignore parse errors and keep raw text for support
+    }
+    if (!res.ok) {
+      throw new Error((data.error as string) || text || `SGX ${res.status}`);
+    }
+
+    return {
+      ok: data.ok === true || data.success === true,
+      referenceNumber: data.referenceNumber ?? null,
+      redirectUrl: data.redirectUrl ?? null,
+      orderId: data.orderId ?? null,
+      raw: data,
     };
   },
 });
