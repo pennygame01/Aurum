@@ -8,7 +8,11 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { BRITELINK_SGX, SGX_PENNY_WITHDRAW_URL } from "./britelinkSgx";
+import {
+  getSgxV0ApiKey,
+  getSgxV0CryptoToEcocashUrl,
+  getSgxV0OffRampChain,
+} from "./britelinkSgx";
 
 const MIN_USD = 0.5;
 
@@ -26,6 +30,15 @@ function normalizeE164Zimbabwe(raw: string): string {
   return t;
 }
 
+/** Partner API v0 examples use 9-digit local form (e.g. 771234567). */
+function toSgxV0Phone(e164: string): string {
+  const t = e164.replace(/\s/g, "");
+  if (t.startsWith("+263")) return t.slice(4);
+  if (t.startsWith("263") && t.length >= 12) return t.slice(3);
+  if (t.startsWith("0") && t.length >= 9) return t.slice(1);
+  return t.replace(/^\+/, "");
+}
+
 export const getPayoutForAction = internalQuery({
   args: { payoutId: v.id("ecocashPayouts") },
   handler: async (ctx, { payoutId }) => {
@@ -38,16 +51,49 @@ export const markPayoutSgxSuccess = internalMutation({
     payoutId: v.id("ecocashPayouts"),
     sgxOrderId: v.string(),
     tronFloatTxid: v.optional(v.string()),
+    sgxV0: v.optional(
+      v.object({
+        paymentAddress: v.optional(v.string()),
+        network: v.optional(v.string()),
+        sendAmount: v.optional(v.number()),
+        sendCurrency: v.optional(v.string()),
+        receiveAmount: v.optional(v.number()),
+        receiveCurrency: v.optional(v.string()),
+        fee: v.optional(v.number()),
+        chessaOrderId: v.optional(v.string()),
+        chessaShortId: v.optional(v.string()),
+      }),
+    ),
   },
   handler: async (ctx, args) => {
     const p = await ctx.db.get(args.payoutId);
     if (!p || p.status !== "queued") return;
+    const v0 = args.sgxV0;
     await ctx.db.patch(args.payoutId, {
       status: "sgx_submitted",
       sgxOrderId: args.sgxOrderId,
       updatedAt: Date.now(),
-      ...(args.tronFloatTxid
-        ? { tronFloatTxid: args.tronFloatTxid }
+      ...(args.tronFloatTxid ? { tronFloatTxid: args.tronFloatTxid } : {}),
+      ...(v0?.paymentAddress !== undefined
+        ? { sgxPaymentAddress: v0.paymentAddress }
+        : {}),
+      ...(v0?.network !== undefined ? { sgxNetwork: v0.network } : {}),
+      ...(v0?.sendAmount !== undefined ? { sgxSendAmount: v0.sendAmount } : {}),
+      ...(v0?.sendCurrency !== undefined
+        ? { sgxSendCurrency: v0.sendCurrency }
+        : {}),
+      ...(v0?.receiveAmount !== undefined
+        ? { sgxReceiveAmount: v0.receiveAmount }
+        : {}),
+      ...(v0?.receiveCurrency !== undefined
+        ? { sgxReceiveCurrency: v0.receiveCurrency }
+        : {}),
+      ...(v0?.fee !== undefined ? { sgxFee: v0.fee } : {}),
+      ...(v0?.chessaOrderId !== undefined
+        ? { chessaOrderId: v0.chessaOrderId }
+        : {}),
+      ...(v0?.chessaShortId !== undefined
+        ? { chessaShortId: v0.chessaShortId }
         : {}),
     });
   },
@@ -120,7 +166,6 @@ export const completeOrFailFromCallback = internalMutation({
 
     // failed after SGX handoff — refund
     if (p.status !== "sgx_submitted") {
-      if (p.status === "failed") return { already: true as const };
       throw new Error("Payout is not in sgx_submitted; cannot mark failed from callback");
     }
     const user = await ctx.db.get(p.userId);
@@ -139,31 +184,57 @@ export const completeOrFailFromCallback = internalMutation({
   },
 });
 
+/** After on-chain TRC20 send to SGX’s paymentAddress. */
+export const markTreasuryFundingSuccess = internalMutation({
+  args: {
+    payoutId: v.id("ecocashPayouts"),
+    tronFloatTxid: v.string(),
+  },
+  handler: async (ctx, { payoutId, tronFloatTxid }) => {
+    const p = await ctx.db.get(payoutId);
+    if (!p || p.status !== "sgx_submitted") return;
+    if (p.tronFloatTxid) return;
+    await ctx.db.patch(payoutId, {
+      tronFloatTxid,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const dispatchToSgx = internalAction({
   args: { payoutId: v.id("ecocashPayouts") },
   handler: async (ctx, { payoutId }) => {
-    const sgxUrl = SGX_PENNY_WITHDRAW_URL;
+    const sgxUrl = getSgxV0CryptoToEcocashUrl();
+    const apiKey = getSgxV0ApiKey();
     const p = await ctx.runQuery(internal.withdrawals.getPayoutForAction, {
       payoutId,
     });
     if (!p || p.status !== "queued") return;
+
+    if (!apiKey) {
+      await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
+        payoutId,
+        error:
+          "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment; cannot call Partner API v0",
+      });
+      return;
+    }
 
     try {
       const res = await fetch(sgxUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${BRITELINK_SGX.sharedBearer}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          idempotencyKey: p.idempotencyKey,
-          amountUsd: p.amountUsd,
-          ecocashPhone: p.ecocashPhone,
           firstName: p.firstName,
           lastName: p.lastName,
-          pennyPayoutId: p._id,
-          userId: p.userId,
-          transactionId: p.transactionId,
+          phone: toSgxV0Phone(p.ecocashPhone),
+          intendedUsdAmount: p.amountUsd,
+          originAsset: "USDT",
+          chain: getSgxV0OffRampChain(),
+          clientReference: p.idempotencyKey,
         }),
       });
       const text = await res.text();
@@ -180,11 +251,11 @@ export const dispatchToSgx = internalAction({
         });
         return;
       }
-      const orderId = (data.sgxOrderId as string) || (data.orderId as string) || (data.id as string);
+      const orderId = data.convexOrderId as string | undefined;
       if (!orderId || typeof orderId !== "string") {
         await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
           payoutId,
-          error: "SGX response missing sgxOrderId / orderId",
+          error: "SGX v0 response missing convexOrderId",
         });
         return;
       }
@@ -193,11 +264,68 @@ export const dispatchToSgx = internalAction({
         (data.tronTxid as string) ||
         (data.txid as string) ||
         undefined;
+      const sgxV0: {
+        paymentAddress?: string;
+        network?: string;
+        sendAmount?: number;
+        sendCurrency?: string;
+        receiveAmount?: number;
+        receiveCurrency?: string;
+        fee?: number;
+        chessaOrderId?: string;
+        chessaShortId?: string;
+      } = {};
+      if (typeof data.paymentAddress === "string")
+        sgxV0.paymentAddress = data.paymentAddress;
+      if (typeof data.network === "string") sgxV0.network = data.network;
+      if (typeof data.sendAmount === "number") sgxV0.sendAmount = data.sendAmount;
+      if (typeof data.sendCurrency === "string")
+        sgxV0.sendCurrency = data.sendCurrency;
+      if (typeof data.receiveAmount === "number")
+        sgxV0.receiveAmount = data.receiveAmount;
+      if (typeof data.receiveCurrency === "string")
+        sgxV0.receiveCurrency = data.receiveCurrency;
+      if (typeof data.fee === "number") sgxV0.fee = data.fee;
+      if (typeof data.chessaOrderId === "string")
+        sgxV0.chessaOrderId = data.chessaOrderId;
+      if (typeof data.chessaShortId === "string")
+        sgxV0.chessaShortId = data.chessaShortId;
+
+      const hasPrefundTx = Boolean(
+        tronFloatTxid &&
+          (typeof tronFloatTxid === "string" ? tronFloatTxid : "").length > 0,
+      );
+      if (!hasPrefundTx) {
+        const toAddr = sgxV0.paymentAddress;
+        const amt = sgxV0.sendAmount;
+        if (typeof toAddr !== "string" || !toAddr.trim()) {
+          await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
+            payoutId,
+            error: "SGX v0 response missing paymentAddress for TRC20 funding",
+          });
+          return;
+        }
+        if (typeof amt !== "number" || !Number.isFinite(amt) || amt <= 0) {
+          await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
+            payoutId,
+            error: "SGX v0 response missing or invalid sendAmount for TRC20 funding",
+          });
+          return;
+        }
+      }
+
       await ctx.runMutation(internal.withdrawals.markPayoutSgxSuccess, {
         payoutId,
         sgxOrderId: orderId,
         tronFloatTxid,
+        ...(Object.keys(sgxV0).length > 0 ? { sgxV0 } : {}),
       });
+
+      if (!hasPrefundTx) {
+        await ctx.scheduler.runAfter(0, internal.treasuryTron.sendUsdtToSgxPayment, {
+          payoutId,
+        });
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await ctx.runMutation(internal.withdrawals.markPayoutFailed, {

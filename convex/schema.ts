@@ -123,6 +123,16 @@ export default defineSchema({
     ),
     sgxError: v.optional(v.string()),
     sgxOrderId: v.optional(v.string()),
+    /** Partner API v0 (crypto-to-ecocash) — returned after quote */
+    sgxPaymentAddress: v.optional(v.string()),
+    sgxNetwork: v.optional(v.string()),
+    sgxSendAmount: v.optional(v.number()),
+    sgxSendCurrency: v.optional(v.string()),
+    sgxReceiveAmount: v.optional(v.number()),
+    sgxReceiveCurrency: v.optional(v.string()),
+    sgxFee: v.optional(v.number()),
+    chessaOrderId: v.optional(v.string()),
+    chessaShortId: v.optional(v.string()),
     /** SGX: TRC20 USDT float tx to Chessa’s deposit (audit), not the player’s */
     tronFloatTxid: v.optional(v.string()),
     createdAt: v.number(),

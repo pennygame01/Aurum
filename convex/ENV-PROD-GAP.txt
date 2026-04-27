@@ -1,0 +1,38 @@
+Convex production — env pull vs this codebase (no secret values in this file)
+================================================================================
+
+ALREADY ON PROD (bunx convex env list --prod)
+---------------------------------------------
+- SGX_V0_PARTNER_PENNYGAME  … Partner API v0 Bearer (Penny -> SGX)
+
+MISSING / STRONGLY RECOMMENDED FOR AUTO WITHDRAW + TRC20 TREASURY
+------------------------------------------------------------------
+1. PENNY_TREASURY_TRON_PRIVATE_KEY   [REQUIRED for auto-send]
+   64-hex private key of the Tron wallet that SENDS TRC20 USDT to SGX
+   paymentAddress. Set in Convex only. Do not 0x-prefix or do — code allows both.
+
+2. PENNY_TREASURY_TRC20_ADDRESS   [optional but recommended]
+   Public base58 address (e.g. TMZP…) for that key — mismatch fails fast.
+
+3. TRON_GRID_API_KEY   [optional]
+   TronGrid “TRON-PRO-API-KEY” for higher rate limits / prod reliability.
+
+4. TRON_FULL_HOST   [optional]
+   Default is https://api.trongrid.io if unset.
+
+OPTIONAL (SGX / CORS / CALLBACKS)
+--------------------------------
+- SGX_V0_BASE_URL          Default https://www.sgxremit.com
+- SGX_V0_OFFRAMP_CHAIN   Default "Tron"
+- SGX_PENNY_CALLBACK_BEARER   Only if SGX POSTs your /sgx/withdrawal-callback
+- SGX_V0_API_KEY           Same as SGX_V0_PARTNER_PENNYGAME; only if you use this name
+
+NOT NEEDED ON CONVEX IF ALREADY USING PARTNER KEY
+-------------------------------------------------
+- SGX_V0_API_KEY   (redundant with SGX_V0_PARTNER_PENNYGAME)
+
+Set missing vars, e.g.:
+  bunx convex env set PENNY_TREASURY_TRON_PRIVATE_KEY "<value>" --prod
+  bunx convex env set PENNY_TREASURY_TRC20_ADDRESS "TMZP..." --prod
+
+Other env (e.g. PAYMENT_*, OPPWA) live in Vercel / Next, not in this list.

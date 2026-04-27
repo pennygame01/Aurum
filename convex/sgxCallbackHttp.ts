@@ -1,12 +1,25 @@
 import { httpAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { BRITELINK_SGX } from "./britelinkSgx";
+import { getSgxToPennyCallbackExpectedBearer } from "./britelinkSgx";
 
 /**
- * SGX calls this when Chessa has a terminal outcome. Same Bearer as BRITELINK_SGX in britelinkSgx.ts
+ * Optional: if SGX POSTs a terminal outcome to Penny, use SGX_PENNY_CALLBACK_BEARER (see britelinkSgx.ts).
+ * Partner API v0 does not include webhooks; confirm with SGX whether this callback is used.
  */
 export const sgxWithdrawalCallback = httpAction(async (ctx, request) => {
-  const expected = BRITELINK_SGX.sharedBearer;
+  const expected = getSgxToPennyCallbackExpectedBearer();
+  if (!expected) {
+    return new Response(
+      JSON.stringify({
+        error:
+          "Callback disabled: set SGX_PENNY_CALLBACK_BEARER in Convex env if SGX should POST here",
+      }),
+      {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
   const auth = request.headers.get("Authorization");
   if (auth !== `Bearer ${expected}`) {
     return new Response("Unauthorized", { status: 401 });
