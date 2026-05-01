@@ -11,7 +11,8 @@ export default function AdminPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const fundViaEcocash = useAction(api.aurum.adminFundWalletViaEcocash);
-  const currentUser = useQuery(api.aurum.getCurrentUser);
+  const checkSgxHealth = useAction(api.aurum.adminCheckSgxPartnerHealth);
+  const adminAccess = useQuery(api.aurum.getAdminAccess);
   const houseWallet = useQuery(api.aurum.getHouseWalletBalance, {
     houseUserId: HOUSE_BANK_USER_ID,
   });
@@ -23,6 +24,9 @@ export default function AdminPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fundResult, setFundResult] = useState<string | null>(null);
   const [fundError, setFundError] = useState<string | null>(null);
+  const [healthBusy, setHealthBusy] = useState(false);
+  const [healthResult, setHealthResult] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
 
   const handleFundWallet = async () => {
     setFundError(null);
@@ -35,8 +39,14 @@ export default function AdminPage() {
         cryptoAmount: Number(cryptoAmount),
         email: email.trim() || undefined,
       });
+      const partner =
+        result.partner != null ? ` | Partner: ${String(result.partner)}` : "";
+      const redirect =
+        result.redirectUrl != null && String(result.redirectUrl).length > 0
+          ? ` | Open: ${String(result.redirectUrl)}`
+          : "";
       setFundResult(
-        `Started successfully. Ref: ${String(result.referenceNumber || "N/A")} | Order: ${String(result.orderId || "N/A")}`,
+        `Started successfully. Ref: ${String(result.referenceNumber || "N/A")} | Order: ${String(result.orderId || "N/A")}${partner}${redirect}`,
       );
     } catch (error) {
       setFundError(error instanceof Error ? error.message : String(error));
@@ -45,7 +55,21 @@ export default function AdminPage() {
     }
   };
 
-  if (isLoading || (isAuthenticated && currentUser === undefined)) {
+  const handleSgxHealth = async () => {
+    setHealthError(null);
+    setHealthResult(null);
+    setHealthBusy(true);
+    try {
+      const out = await checkSgxHealth({});
+      setHealthResult(JSON.stringify(out.body, null, 2));
+    } catch (error) {
+      setHealthError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setHealthBusy(false);
+    }
+  };
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
         <div className="text-slate-600 dark:text-slate-300">Loading admin dashboard...</div>
@@ -72,7 +96,15 @@ export default function AdminPage() {
     );
   }
 
-  if (!currentUser || currentUser.role !== "admin") {
+  if (isAuthenticated && adminAccess === undefined) {
+    return (
+      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
+        <div className="text-slate-600 dark:text-slate-300">Loading admin dashboard...</div>
+      </div>
+    );
+  }
+
+  if (!adminAccess?.allowed) {
     return (
       <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
         <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6 w-full max-w-md text-center">
@@ -138,11 +170,30 @@ export default function AdminPage() {
               <p className="text-slate-600 dark:text-slate-300">
                 Off-ramp: <span className="font-mono">{sgxConfig?.offRampUrl ?? "-"}</span>
               </p>
+              <p className="text-slate-600 dark:text-slate-300">
+                Health: <span className="font-mono">{sgxConfig?.healthUrl ?? "-"}</span>
+              </p>
+              <button
+                type="button"
+                onClick={handleSgxHealth}
+                disabled={healthBusy}
+                className="mt-2 bg-slate-200 hover:bg-slate-300 dark:bg-gray-800 dark:hover:bg-gray-700 disabled:opacity-60 text-slate-900 dark:text-white px-3 py-1.5 rounded-md text-sm"
+              >
+                {healthBusy ? "Checking…" : "Verify key (GET /v0/health)"}
+              </button>
+              {healthResult && (
+                <pre className="mt-2 text-xs bg-slate-100 dark:bg-gray-950 p-2 rounded overflow-x-auto whitespace-pre-wrap">
+                  {healthResult}
+                </pre>
+              )}
+              {healthError && (
+                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{healthError}</p>
+              )}
               <p className={sgxConfig?.hasPartnerKey ? "text-emerald-600" : "text-red-600"}>
                 Partner key: {sgxConfig?.hasPartnerKey ? "set" : "missing"}
               </p>
               <p className={sgxConfig?.hasOnRampWalletBep20 ? "text-emerald-600" : "text-red-600"}>
-                On-ramp BEP20 wallet: {sgxConfig?.hasOnRampWalletBep20 ? "set" : "missing"}
+                On-ramp settlement wallet (PENNY_ONRAMP_WALLET_BEP20): {sgxConfig?.hasOnRampWalletBep20 ? "set" : "missing"}
               </p>
               <p className={sgxConfig?.hasTreasuryTronPrivateKey ? "text-emerald-600" : "text-red-600"}>
                 Treasury Tron private key: {sgxConfig?.hasTreasuryTronPrivateKey ? "set" : "missing"}
@@ -159,7 +210,7 @@ export default function AdminPage() {
             Fund Penny Wallet via EcoCash (SGX on-ramp)
           </h2>
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Calls SGX <span className="font-mono">/api/v0/ecocash-to-crypto</span> and credits crypto to your configured BEP-20 wallet.
+            Calls SGX <span className="font-mono">POST /v0/ecocash-to-crypto</span>. If <span className="font-mono">redirectUrl</span> is returned, open it for the payer; otherwise EcoCash may prompt on the phone.
           </p>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
             <input
