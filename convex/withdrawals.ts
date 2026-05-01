@@ -10,10 +10,7 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
   formatSgxPartnerApiError,
-  getSgxV0ApiKey,
   getSgxV0CryptoToEcocashUrl,
-  getSgxV0OffRampChain,
-  shouldSendSgxV0AuthHeader,
 } from "./britelinkSgx";
 
 const MIN_USD = 0.5;
@@ -207,39 +204,20 @@ export const dispatchToSgx = internalAction({
   args: { payoutId: v.id("ecocashPayouts") },
   handler: async (ctx, { payoutId }) => {
     const sgxUrl = getSgxV0CryptoToEcocashUrl();
-    const apiKey = getSgxV0ApiKey();
     const p = await ctx.runQuery(internal.withdrawals.getPayoutForAction, {
       payoutId,
     });
     if (!p || p.status !== "queued") return;
 
-    if (shouldSendSgxV0AuthHeader() && !apiKey) {
-      await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-        payoutId,
-        error:
-          "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment; cannot call Partner API v0",
-      });
-      return;
-    }
-
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-      if (shouldSendSgxV0AuthHeader()) {
-        headers.Authorization = `Bearer ${apiKey}`;
-      }
-
       const res = await fetch(sgxUrl, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           firstName: p.firstName,
           lastName: p.lastName,
           phone: toSgxV0Phone(p.ecocashPhone),
           intendedUsdAmount: p.amountUsd,
-          originAsset: "USDT",
-          chain: getSgxV0OffRampChain(),
           clientReference: p.idempotencyKey,
         }),
       });
@@ -262,11 +240,17 @@ export const dispatchToSgx = internalAction({
         });
         return;
       }
-      const orderId = data.convexOrderId as string | undefined;
-      if (!orderId || typeof orderId !== "string") {
+      const orderIdRaw = data.orderId ?? data.convexOrderId;
+      const orderId =
+        typeof orderIdRaw === "string"
+          ? orderIdRaw
+          : orderIdRaw != null
+            ? String(orderIdRaw)
+            : "";
+      if (!orderId) {
         await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
           payoutId,
-          error: "SGX v0 response missing convexOrderId",
+          error: "SGX v0 response missing orderId",
         });
         return;
       }

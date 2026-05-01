@@ -2,7 +2,7 @@
 
 /**
  * Broadcasts TRC20 USDT from Penny’s treasury to the `paymentAddress` SGX returns.
- * Requires env (see britelinkSgx.ts). Treasury must hold USDT + TRX for fees.
+ * Requires PENNY_TREASURY_* env. Treasury must hold USDT + TRX for fees.
  */
 import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
