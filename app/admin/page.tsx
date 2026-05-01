@@ -11,112 +11,86 @@ export default function AdminPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const fundViaEcocash = useAction(api.aurum.adminFundWalletViaEcocash);
-  const checkSgxHealth = useAction(api.aurum.adminCheckSgxPartnerHealth);
   const adminAccess = useQuery(api.aurum.getAdminAccess);
   const houseWallet = useQuery(api.aurum.getHouseWalletBalance, {
     houseUserId: HOUSE_BANK_USER_ID,
   });
-  const sgxConfig = useQuery(api.aurum.getSgxApiConfigStatus);
+  const sgx = useQuery(api.aurum.getSgxApiConfigStatus);
   const [payerPhone, setPayerPhone] = useState("");
   const [fiatAmount, setFiatAmount] = useState("10.00");
-  const [cryptoAmount, setCryptoAmount] = useState("9.95");
-  const [email, setEmail] = useState("admin@pennygame.app");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [fundResult, setFundResult] = useState<string | null>(null);
-  const [fundError, setFundError] = useState<string | null>(null);
-  const [healthBusy, setHealthBusy] = useState(false);
-  const [healthResult, setHealthResult] = useState<string | null>(null);
-  const [healthError, setHealthError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  const handleFundWallet = async () => {
-    setFundError(null);
-    setFundResult(null);
-    setIsSubmitting(true);
+  const submitFund = async () => {
+    setErr(null);
+    setMsg(null);
+    setBusy(true);
     try {
-      const result = await fundViaEcocash({
+      const out = await fundViaEcocash({
         payerPhone,
         fiatAmount: Number(fiatAmount),
-        cryptoAmount: Number(cryptoAmount),
         email: email.trim() || undefined,
       });
-      const partner =
-        result.partner != null ? ` | Partner: ${String(result.partner)}` : "";
-      const redirect =
-        result.redirectUrl != null && String(result.redirectUrl).length > 0
-          ? ` | Open: ${String(result.redirectUrl)}`
+      const ref = String(out.referenceNumber ?? "—");
+      const ord = String(out.orderId ?? "—");
+      const redir =
+        out.redirectUrl != null && String(out.redirectUrl).length > 0
+          ? `\nOpen payment: ${String(out.redirectUrl)}`
           : "";
-      setFundResult(
-        `Started successfully. Ref: ${String(result.referenceNumber || "N/A")} | Order: ${String(result.orderId || "N/A")}${partner}${redirect}`,
-      );
-    } catch (error) {
-      setFundError(error instanceof Error ? error.message : String(error));
+      setMsg(`OK — ref ${ref}, order ${ord}.${redir}`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
     } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSgxHealth = async () => {
-    setHealthError(null);
-    setHealthResult(null);
-    setHealthBusy(true);
-    try {
-      const out = await checkSgxHealth({});
-      setHealthResult(JSON.stringify(out.body, null, 2));
-    } catch (error) {
-      setHealthError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setHealthBusy(false);
+      setBusy(false);
     }
   };
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
-        <div className="text-slate-600 dark:text-slate-300">Loading admin dashboard...</div>
+      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center text-slate-600 dark:text-slate-300">
+        Loading…
       </div>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
-        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6 w-full max-w-md text-center">
-          <h1 className="text-xl font-bold text-slate-800 dark:text-white">Admin Sign In Required</h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-300">
-            Please sign in to access the admin dashboard.
-          </p>
+      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-lg p-6 max-w-sm w-full text-center space-y-3">
+          <p className="text-slate-800 dark:text-white font-medium">Sign in required</p>
           <button
+            type="button"
             onClick={() => router.push("/signin")}
-            className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-md text-sm"
           >
-            Go to Sign In
+            Sign in
           </button>
         </div>
       </div>
     );
   }
 
-  if (isAuthenticated && adminAccess === undefined) {
+  if (adminAccess === undefined) {
     return (
-      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
-        <div className="text-slate-600 dark:text-slate-300">Loading admin dashboard...</div>
+      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center text-slate-600 dark:text-slate-300">
+        Loading…
       </div>
     );
   }
 
   if (!adminAccess?.allowed) {
     return (
-      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center">
-        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6 w-full max-w-md text-center">
-          <h1 className="text-xl font-bold text-slate-800 dark:text-white">Access Denied</h1>
-          <p className="mt-2 text-slate-600 dark:text-slate-300">
-            This page is restricted to admin accounts.
-          </p>
+      <div className="min-h-screen bg-slate-100 dark:bg-gray-950 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-lg p-6 max-w-sm w-full text-center space-y-3">
+          <p className="text-slate-800 dark:text-white font-medium">Access denied</p>
           <button
+            type="button"
             onClick={() => router.push("/play")}
-            className="mt-4 w-full bg-slate-700 hover:bg-slate-800 text-white py-2 rounded-md"
+            className="w-full bg-slate-700 hover:bg-slate-800 text-white py-2 rounded-md text-sm"
           >
-            Back to Play
+            Back
           </button>
         </div>
       </div>
@@ -124,147 +98,77 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-gray-950">
-      <header className="bg-white dark:bg-gray-900 border-b border-slate-200 dark:border-gray-800">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Admin Dashboard</h1>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Penny Game operations and treasury overview
-            </p>
-          </div>
-          <button
-            onClick={() => router.push("/play")}
-            className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2 rounded-md"
-          >
-            Back to Play
-          </button>
-        </div>
+    <div className="min-h-screen bg-slate-100 dark:bg-gray-950 text-slate-900 dark:text-slate-100">
+      <header className="border-b border-slate-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur px-4 py-3 flex justify-between items-center">
+        <span className="font-semibold">Admin</span>
+        <button
+          type="button"
+          onClick={() => router.push("/play")}
+          className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          Play
+        </button>
       </header>
 
-      <main className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6">
-            <div className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Penny Bank Wallet
-            </div>
-            <div className="mt-2 text-3xl font-bold text-emerald-600 dark:text-emerald-400">
-              ${(houseWallet?.balance ?? 0).toFixed(2)}
-            </div>
-            <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Current crypto bank float (live)
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6">
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
-              SGX API Configuration Status
-            </h2>
-            <div className="mt-3 space-y-2 text-sm">
-              <p className="text-slate-600 dark:text-slate-300">
-                Base: <span className="font-mono">{sgxConfig?.baseUrl ?? "-"}</span>
-              </p>
-              <p className="text-slate-600 dark:text-slate-300">
-                On-ramp: <span className="font-mono">{sgxConfig?.onRampUrl ?? "-"}</span>
-              </p>
-              <p className="text-slate-600 dark:text-slate-300">
-                Off-ramp: <span className="font-mono">{sgxConfig?.offRampUrl ?? "-"}</span>
-              </p>
-              <p className="text-slate-600 dark:text-slate-300">
-                Health: <span className="font-mono">{sgxConfig?.healthUrl ?? "-"}</span>
-              </p>
-              <button
-                type="button"
-                onClick={handleSgxHealth}
-                disabled={healthBusy}
-                className="mt-2 bg-slate-200 hover:bg-slate-300 dark:bg-gray-800 dark:hover:bg-gray-700 disabled:opacity-60 text-slate-900 dark:text-white px-3 py-1.5 rounded-md text-sm"
-              >
-                {healthBusy
-                  ? "Checking…"
-                  : sgxConfig?.authRequired
-                    ? "Verify key (GET /v0/health)"
-                    : "Check test endpoint (GET /v0/test/...)"}
-              </button>
-              {healthResult && (
-                <pre className="mt-2 text-xs bg-slate-100 dark:bg-gray-950 p-2 rounded overflow-x-auto whitespace-pre-wrap">
-                  {healthResult}
-                </pre>
-              )}
-              {healthError && (
-                <p className="mt-2 text-sm text-red-600 dark:text-red-400">{healthError}</p>
-              )}
-              <p className={sgxConfig?.hasPartnerKey ? "text-emerald-600" : "text-red-600"}>
-                Partner key: {sgxConfig?.hasPartnerKey ? "set" : "missing"}
-              </p>
-              <p
-                className={
-                  sgxConfig?.useTestEndpoints
-                    ? "text-amber-600 dark:text-amber-400"
-                    : "text-slate-600 dark:text-slate-300"
-                }
-              >
-                Mode: {sgxConfig?.useTestEndpoints ? "TEST (no auth)" : "PRODUCTION (auth required)"}
-              </p>
-              <p className={sgxConfig?.hasOnRampWalletBep20 ? "text-emerald-600" : "text-red-600"}>
-                On-ramp settlement wallet (PENNY_ONRAMP_WALLET_BEP20): {sgxConfig?.hasOnRampWalletBep20 ? "set" : "missing"}
-              </p>
-              <p className={sgxConfig?.hasTreasuryTronPrivateKey ? "text-emerald-600" : "text-red-600"}>
-                Treasury Tron private key: {sgxConfig?.hasTreasuryTronPrivateKey ? "set" : "missing"}
-              </p>
-              <p className={sgxConfig?.hasTreasuryTronAddress ? "text-emerald-600" : "text-red-600"}>
-                Treasury Tron address: {sgxConfig?.hasTreasuryTronAddress ? "set" : "missing"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 bg-white dark:bg-gray-900 border border-slate-200 dark:border-gray-800 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-white">
-            Fund Penny Wallet via EcoCash (SGX on-ramp)
-          </h2>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-            Calls SGX <span className="font-mono">POST /v0/ecocash-to-crypto</span>. If <span className="font-mono">redirectUrl</span> is returned, open it for the payer; otherwise EcoCash may prompt on the phone.
+      <main className="max-w-lg mx-auto px-4 py-6 space-y-6">
+        <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4">
+          <p className="text-sm text-slate-500 dark:text-slate-400">House wallet</p>
+          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">
+            ${(houseWallet?.balance ?? 0).toFixed(2)}
           </p>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              value={payerPhone}
-              onChange={(e) => setPayerPhone(e.target.value)}
-              placeholder="EcoCash phone e.g. 771234567"
-              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Payer email"
-              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={fiatAmount}
-              onChange={(e) => setFiatAmount(e.target.value)}
-              placeholder="USD amount e.g. 10.00"
-              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
-            />
-            <input
-              value={cryptoAmount}
-              onChange={(e) => setCryptoAmount(e.target.value)}
-              placeholder="USDT quote e.g. 9.95"
-              className="w-full rounded-md border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
-            />
-          </div>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 text-sm space-y-2">
+          <p className="font-medium text-slate-700 dark:text-slate-200">SGX v0 (no API key)</p>
+          <p className="break-all font-mono text-xs text-slate-600 dark:text-slate-400">
+            Fund: {sgx?.ecocashToCryptoUrl ?? "—"}
+          </p>
+          <p className="break-all font-mono text-xs text-slate-600 dark:text-slate-400">
+            Cash out: {sgx?.cryptoToEcocashUrl ?? "—"}
+          </p>
+          <ul className="text-xs space-y-0.5 text-slate-600 dark:text-slate-400">
+            <li>PENNY_ONRAMP_WALLET_BEP20: {sgx?.hasOnRampWalletBep20 ? "set" : "missing"}</li>
+            <li>PENNY_TREASURY_TRON_PRIVATE_KEY: {sgx?.hasTreasuryTronPrivateKey ? "set" : "missing"}</li>
+            <li>PENNY_TREASURY_TRC20_ADDRESS: {sgx?.hasTreasuryTronAddress ? "set" : "missing"}</li>
+          </ul>
+        </section>
+
+        <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
+          <p className="font-medium text-slate-700 dark:text-slate-200">EcoCash → USDT</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            POST JSON: walletAddress (env), payerPhone, fiatAmount. Email optional.
+          </p>
+          <input
+            value={payerPhone}
+            onChange={(e) => setPayerPhone(e.target.value)}
+            placeholder="Phone e.g. 0775600726"
+            className="w-full rounded border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+          />
+          <input
+            value={fiatAmount}
+            onChange={(e) => setFiatAmount(e.target.value)}
+            placeholder='USD e.g. "10.00"'
+            className="w-full rounded border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+          />
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email (optional)"
+            className="w-full rounded border border-slate-300 dark:border-gray-700 bg-white dark:bg-gray-950 px-3 py-2 text-sm"
+          />
           <button
-            onClick={handleFundWallet}
-            disabled={isSubmitting}
-            className="mt-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-2 rounded-md"
+            type="button"
+            disabled={busy}
+            onClick={submitFund}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white py-2 rounded-md text-sm font-medium"
           >
-            {isSubmitting ? "Starting..." : "Start EcoCash -> Crypto Funding"}
+            {busy ? "Posting…" : "POST ecocash-to-crypto"}
           </button>
-          {fundResult && (
-            <p className="mt-3 text-sm text-emerald-600 dark:text-emerald-400">{fundResult}</p>
+          {msg && (
+            <p className="text-sm text-emerald-600 dark:text-emerald-400 whitespace-pre-wrap">{msg}</p>
           )}
-          {fundError && (
-            <p className="mt-3 text-sm text-red-600 dark:text-red-400">{fundError}</p>
-          )}
-        </div>
+          {err && <p className="text-sm text-red-600 dark:text-red-400">{err}</p>}
+        </section>
       </main>
     </div>
   );

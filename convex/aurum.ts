@@ -4,13 +4,9 @@ import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
   formatSgxPartnerApiError,
-  getSgxV0ApiKey,
   getSgxV0BaseUrl,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0EcocashToCryptoUrl,
-  getSgxV0HealthUrl,
-  shouldSendSgxV0AuthHeader,
-  useSgxV0TestEndpoints,
 } from "./britelinkSgx";
 
 function parseCsvEnv(name: string): string[] {
@@ -431,18 +427,14 @@ export const getSgxApiConfigStatus = query({
     }
 
     return {
-      useTestEndpoints: useSgxV0TestEndpoints(),
-      authRequired: shouldSendSgxV0AuthHeader(),
-      hasPartnerKey: Boolean(getSgxV0ApiKey()),
+      ecocashToCryptoUrl: getSgxV0EcocashToCryptoUrl(),
+      cryptoToEcocashUrl: getSgxV0CryptoToEcocashUrl(),
+      baseUrl: getSgxV0BaseUrl(),
       hasTreasuryTronPrivateKey: Boolean(
         process.env.PENNY_TREASURY_TRON_PRIVATE_KEY,
       ),
       hasTreasuryTronAddress: Boolean(process.env.PENNY_TREASURY_TRC20_ADDRESS),
       hasOnRampWalletBep20: Boolean(process.env.PENNY_ONRAMP_WALLET_BEP20),
-      onRampUrl: getSgxV0EcocashToCryptoUrl(),
-      offRampUrl: getSgxV0CryptoToEcocashUrl(),
-      healthUrl: getSgxV0HealthUrl(),
-      baseUrl: getSgxV0BaseUrl(),
     };
   },
 });
@@ -451,7 +443,6 @@ export const adminFundWalletViaEcocash = action({
   args: {
     payerPhone: v.string(),
     fiatAmount: v.number(),
-    cryptoAmount: v.number(),
     email: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -468,48 +459,32 @@ export const adminFundWalletViaEcocash = action({
       );
     }
 
-    const apiKey = getSgxV0ApiKey();
-    if (shouldSendSgxV0AuthHeader() && !apiKey) {
-      throw new Error(
-        "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
-      );
-    }
-
     const walletAddress = process.env.PENNY_ONRAMP_WALLET_BEP20?.trim();
     if (!walletAddress) {
       throw new Error(
-        "Set PENNY_ONRAMP_WALLET_BEP20 (treasury / settlement wallet address per SGX partner config) in Convex environment",
+        "Set PENNY_ONRAMP_WALLET_BEP20 (BEP-20 USDT address for settlements) in Convex environment",
       );
     }
 
     const phone = args.payerPhone.trim();
     const fiatAmount = Number(args.fiatAmount.toFixed(2));
-    const cryptoAmount = Number(args.cryptoAmount.toFixed(6));
     if (!phone) throw new Error("payerPhone is required");
     if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
       throw new Error("fiatAmount must be greater than 0");
     }
-    if (!Number.isFinite(cryptoAmount) || cryptoAmount < 0) {
-      throw new Error("cryptoAmount must be >= 0");
-    }
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+    const payload: Record<string, string> = {
+      walletAddress,
+      payerPhone: phone,
+      fiatAmount: fiatAmount.toFixed(2),
     };
-    if (shouldSendSgxV0AuthHeader()) {
-      headers.Authorization = `Bearer ${apiKey}`;
-    }
+    const email = args.email?.trim();
+    if (email) payload.email = email;
 
     const res = await fetch(getSgxV0EcocashToCryptoUrl(), {
       method: "POST",
-      headers,
-      body: JSON.stringify({
-        walletAddress,
-        payerPhone: phone,
-        fiatAmount: fiatAmount.toFixed(2),
-        cryptoAmount: cryptoAmount.toFixed(6),
-        email: args.email?.trim() || "admin@pennygame.app",
-      }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
 
     const text = await res.text();
@@ -532,63 +507,10 @@ export const adminFundWalletViaEcocash = action({
 
     return {
       ok: data.ok === true || data.success === true,
-      partner: typeof data.partner === "string" ? data.partner : null,
       referenceNumber: data.referenceNumber ?? null,
       redirectUrl: data.redirectUrl ?? null,
       orderId: data.orderId ?? null,
       raw: data,
-    };
-  },
-});
-
-export const adminCheckSgxPartnerHealth = action({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.subject) throw new Error("Not authenticated");
-
-    const userId = usersIdFromIdentitySubject(identity.subject);
-    const currentUser = await ctx.runQuery(internal.aurum.getUserByIdInternal, {
-      userId,
-    });
-    if (!currentUser || !isAdminUser(currentUser)) {
-      throw new Error("Unauthorized: Admin access required");
-    }
-
-    const apiKey = getSgxV0ApiKey();
-    if (shouldSendSgxV0AuthHeader() && !apiKey) {
-      throw new Error(
-        "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
-      );
-    }
-
-    const headers: Record<string, string> = {};
-    if (shouldSendSgxV0AuthHeader()) {
-      headers.Authorization = `Bearer ${apiKey}`;
-    }
-
-    const res = await fetch(getSgxV0HealthUrl(), {
-      method: "GET",
-      headers,
-    });
-
-    const text = await res.text();
-    let data: Record<string, unknown> = {};
-    try {
-      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-    } catch {
-      // ignore
-    }
-
-    if (!res.ok) {
-      throw new Error(
-        formatSgxPartnerApiError("SGX health", res.status, text, data),
-      );
-    }
-
-    return {
-      httpStatus: res.status,
-      body: data,
     };
   },
 });
