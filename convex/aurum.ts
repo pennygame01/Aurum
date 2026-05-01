@@ -7,7 +7,9 @@ import {
   getSgxV0BaseUrl,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0EcocashToCryptoUrl,
+  isValidZwEcocashNineDigits,
   parseSgxPartnerFlow,
+  toZwEcocashLocalNineDigits,
   useSgxV0TestEndpoints,
 } from "./britelinkSgx";
 
@@ -494,16 +496,20 @@ export const adminFundWalletViaEcocash = action({
       );
     }
 
-    const phone = args.payerPhone.trim();
+    const phoneNormalized = toZwEcocashLocalNineDigits(args.payerPhone);
+    if (!isValidZwEcocashNineDigits(phoneNormalized)) {
+      throw new Error(
+        "Enter a valid Zimbabwe EcoCash number (e.g. 0771234567 or +263771234567). Pesepay needs 9 digits starting with 7.",
+      );
+    }
     const fiatAmount = Number(args.fiatAmount.toFixed(2));
-    if (!phone) throw new Error("payerPhone is required");
     if (!Number.isFinite(fiatAmount) || fiatAmount <= 0) {
       throw new Error("fiatAmount must be greater than 0");
     }
 
     const payload: Record<string, string> = {
       walletAddress,
-      payerPhone: phone,
+      payerPhone: phoneNormalized,
       fiatAmount: fiatAmount.toFixed(2),
     };
     const email = args.email?.trim();
@@ -515,11 +521,37 @@ export const adminFundWalletViaEcocash = action({
       }
     }
 
-    const res = await fetch(getSgxV0EcocashToCryptoUrl(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    const url = getSgxV0EcocashToCryptoUrl();
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    const partnerBearer = process.env.SGX_V0_PARTNER_BEARER?.trim();
+    if (partnerBearer) {
+      headers.Authorization = `Bearer ${partnerBearer}`;
+    }
+
+    const controller = new AbortController();
+    const timeoutMs = 120_000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (msg.includes("abort") || msg === "The operation was aborted.") {
+        throw new Error(
+          `SGX ecocash-to-crypto timed out after ${timeoutMs / 1000}s — check ${url} and Convex→internet connectivity`,
+        );
+      }
+      throw new Error(`SGX ecocash-to-crypto fetch failed: ${msg}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     const text = await res.text();
     let data: Record<string, unknown> = {};
@@ -539,6 +571,26 @@ export const adminFundWalletViaEcocash = action({
       );
     }
 
+    const referenceNumber =
+      data.referenceNumber ??
+      data.reference_number ??
+      data.pesepayReference ??
+      null;
+    const orderId = data.orderId ?? data.order_id ?? null;
+
+    if (
+      referenceNumber == null ||
+      referenceNumber === "" ||
+      (typeof referenceNumber !== "string" && typeof referenceNumber !== "number")
+    ) {
+      throw new Error(
+        `SGX returned HTTP ${res.status} but no referenceNumber — Pesepay may have rejected the session. First 600 chars: ${text.slice(0, 600)}`,
+      );
+    }
+
+    const referenceNumberStr = String(referenceNumber);
+    const orderIdStr = orderId != null ? String(orderId) : null;
+
     let partnerFlow = parseSgxPartnerFlow(data);
     const topInstruction =
       typeof data.instruction === "string" ? data.instruction : null;
@@ -546,12 +598,18 @@ export const adminFundWalletViaEcocash = action({
       partnerFlow = { ...partnerFlow, instruction: topInstruction };
     }
 
+    const hasSuccessFlag =
+      data.ok === true ||
+      data.success === true ||
+      (typeof data.success === "string" && data.success === "true");
+
     return {
-      ok: data.ok === true || data.success === true,
-      referenceNumber: data.referenceNumber ?? null,
+      ok: hasSuccessFlag || Boolean(referenceNumberStr),
+      referenceNumber: referenceNumberStr,
       redirectUrl: data.redirectUrl ?? null,
-      orderId: data.orderId ?? null,
+      orderId: orderIdStr,
       partnerFlow,
+      payerPhoneSent: phoneNormalized.replace(/\d(?=\d{4})/g, "*"),
       instruction: partnerFlow?.instruction ?? topInstruction ?? null,
       raw: data,
     };
