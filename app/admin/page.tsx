@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
+import toast, { Toaster } from "react-hot-toast";
 
 const HOUSE_BANK_USER_ID = "ks72m74heawkx1p7n524fbtnt97mj6y1";
 
@@ -21,6 +22,7 @@ type FundSuccess = {
   redirectUrl: unknown;
   orderId: unknown;
   partnerFlow: PartnerFlow;
+  payerPhoneSent?: string;
   instruction: string | null;
   raw: Record<string, unknown>;
 };
@@ -106,8 +108,26 @@ export default function AdminPage() {
           periodMs: Math.max(4000, Math.round(sec * 1000)),
         });
       }
+
+      const refOk =
+        out.referenceNumber != null && String(out.referenceNumber).length > 0;
+      if (out.ok && refOk) {
+        toast.success(
+          "EcoCash session started — check the handset for USSD / PIN. Poll runs below.",
+          { duration: 6000 },
+        );
+      } else if (refOk) {
+        toast(
+          "Got Pesepay reference — confirm ok/success flags with SGX if balance looks wrong.",
+          { duration: 5000 },
+        );
+      } else {
+        toast.error("SGX response missing reference — see panel below.");
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      setErr(msg);
+      toast.error(msg, { duration: 8000 });
     } finally {
       setBusy(false);
     }
@@ -256,6 +276,7 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-gray-950 text-slate-900 dark:text-slate-100">
+      <Toaster position="top-center" />
       <header className="border-b border-slate-200 dark:border-gray-800 bg-white/80 dark:bg-gray-900/80 backdrop-blur px-4 py-3 flex justify-between items-center">
         <span className="font-semibold">Admin</span>
         <button
@@ -298,7 +319,10 @@ export default function AdminPage() {
         <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
           <p className="font-medium text-slate-700 dark:text-slate-200">EcoCash → USDT</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Body uses BEP-20 <span className="font-mono">walletAddress</span> from env; USSD flow waits on your phone — do not expect a browser tab unless mode is{" "}
+            Body uses BEP-20 <span className="font-mono">walletAddress</span> from Convex env{" "}
+            <span className="font-mono">PENNY_ONRAMP_WALLET_BEP20</span>. Phone is normalized to 9 digits (e.g.{" "}
+            <span className="font-mono">077…</span> → <span className="font-mono">77…</span>) for Pesepay. USSD/PIN
+            appears on the handset — often no browser popup unless mode is{" "}
             <span className="font-mono">browser_redirect</span>.
           </p>
           <input
@@ -336,10 +360,28 @@ export default function AdminPage() {
 
           {fundOut && (
             <div className="rounded-md border border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-950/80 p-3 space-y-2 text-sm">
-              <p className="text-emerald-700 dark:text-emerald-300 font-medium">
-                OK — ref {String(fundOut.referenceNumber ?? "—")} · order{" "}
+              <p
+                className={
+                  fundOut.ok &&
+                  fundOut.referenceNumber != null &&
+                  String(fundOut.referenceNumber).length > 0
+                    ? "text-emerald-700 dark:text-emerald-300 font-medium"
+                    : "text-amber-800 dark:text-amber-200 font-medium"
+                }
+              >
+                {fundOut.ok &&
+                fundOut.referenceNumber != null &&
+                String(fundOut.referenceNumber).length > 0
+                  ? "Session started"
+                  : "Check response"}{" "}
+                — ref {String(fundOut.referenceNumber ?? "—")} · order{" "}
                 {String(fundOut.orderId ?? "—")}
               </p>
+              {fundOut.payerPhoneSent ? (
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Sent to SGX as payerPhone (masked): {fundOut.payerPhoneSent}
+                </p>
+              ) : null}
               {pf?.mode ? (
                 <p className="text-xs font-mono text-slate-600 dark:text-slate-400">
                   partnerFlow.mode: {pf.mode}

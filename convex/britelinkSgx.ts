@@ -6,6 +6,7 @@
  * Env:
  * - SGX_V0_BASE_URL — optional override (default https://sgxremit.com, no trailing slash)
  * - SGX_V0_USE_TEST_ENDPOINTS=true — use `/v0/test/...` paths (dev only; prod should omit)
+ * - SGX_V0_PARTNER_BEARER — optional `Authorization: Bearer …` on outbound POSTs (match Chessa partner key if required)
  *
  * Treasury / Tron payouts: PENNY_TREASURY_* in Convex dashboard.
  */
@@ -42,6 +43,35 @@ export function getSgxV0CryptoToEcocashUrl(): string {
 
 export function getSgxToPennyCallbackExpectedBearer(): string | undefined {
   return process.env.SGX_PENNY_CALLBACK_BEARER;
+}
+
+/**
+ * Pesepay EcoCash seamless (ZW) expects 9-digit local mobile without leading 0 (e.g. 771234567).
+ * Same rules as Chessa `toZwEcocashLocalNineDigits` — keep in sync when changing either app.
+ */
+export function toZwEcocashLocalNineDigits(raw: string): string {
+  let t = raw.replace(/\s/g, "");
+  if (!t) return "";
+  if (t.startsWith("00")) t = t.slice(2);
+  if (t.startsWith("+263")) t = t.slice(4);
+  else if (t.startsWith("263") && t.length >= 12) t = t.slice(3);
+  else if (t.startsWith("0") && t.length >= 9) t = t.slice(1);
+  const digits = t.replace(/\D/g, "");
+  if (digits.length >= 12 && digits.startsWith("263")) {
+    return digits.slice(3, 12);
+  }
+  if (digits.length >= 9 && digits.startsWith("7")) {
+    return digits.slice(0, 9);
+  }
+  if (digits.length > 9) {
+    const last = digits.slice(-9);
+    if (last.startsWith("7")) return last;
+  }
+  return digits;
+}
+
+export function isValidZwEcocashNineDigits(digits: string): boolean {
+  return /^7\d{8}$/.test(digits);
 }
 
 /**
