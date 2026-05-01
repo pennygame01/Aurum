@@ -179,7 +179,11 @@ export default function AdminPage() {
                 disabled={healthBusy}
                 className="mt-2 bg-slate-200 hover:bg-slate-300 dark:bg-gray-800 dark:hover:bg-gray-700 disabled:opacity-60 text-slate-900 dark:text-white px-3 py-1.5 rounded-md text-sm"
               >
-                {healthBusy ? "Checking…" : "Verify key (GET /v0/health)"}
+                {healthBusy
+                  ? "Checking…"
+                  : sgxConfig?.authRequired
+                    ? "Verify key (GET /v0/health)"
+                    : "Check test endpoint (GET /v0/test/...)"}
               </button>
               {healthResult && (
                 <pre className="mt-2 text-xs bg-slate-100 dark:bg-gray-950 p-2 rounded overflow-x-auto whitespace-pre-wrap">
@@ -191,6 +195,15 @@ export default function AdminPage() {
               )}
               <p className={sgxConfig?.hasPartnerKey ? "text-emerald-600" : "text-red-600"}>
                 Partner key: {sgxConfig?.hasPartnerKey ? "set" : "missing"}
+              </p>
+              <p
+                className={
+                  sgxConfig?.useTestEndpoints
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-slate-600 dark:text-slate-300"
+                }
+              >
+                Mode: {sgxConfig?.useTestEndpoints ? "TEST (no auth)" : "PRODUCTION (auth required)"}
               </p>
               <p className={sgxConfig?.hasOnRampWalletBep20 ? "text-emerald-600" : "text-red-600"}>
                 On-ramp settlement wallet (PENNY_ONRAMP_WALLET_BEP20): {sgxConfig?.hasOnRampWalletBep20 ? "set" : "missing"}

@@ -9,6 +9,8 @@ import {
   getSgxV0CryptoToEcocashUrl,
   getSgxV0EcocashToCryptoUrl,
   getSgxV0HealthUrl,
+  shouldSendSgxV0AuthHeader,
+  useSgxV0TestEndpoints,
 } from "./britelinkSgx";
 
 function parseCsvEnv(name: string): string[] {
@@ -429,6 +431,8 @@ export const getSgxApiConfigStatus = query({
     }
 
     return {
+      useTestEndpoints: useSgxV0TestEndpoints(),
+      authRequired: shouldSendSgxV0AuthHeader(),
       hasPartnerKey: Boolean(getSgxV0ApiKey()),
       hasTreasuryTronPrivateKey: Boolean(
         process.env.PENNY_TREASURY_TRON_PRIVATE_KEY,
@@ -465,7 +469,7 @@ export const adminFundWalletViaEcocash = action({
     }
 
     const apiKey = getSgxV0ApiKey();
-    if (!apiKey) {
+    if (shouldSendSgxV0AuthHeader() && !apiKey) {
       throw new Error(
         "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
       );
@@ -489,12 +493,16 @@ export const adminFundWalletViaEcocash = action({
       throw new Error("cryptoAmount must be >= 0");
     }
 
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (shouldSendSgxV0AuthHeader()) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
     const res = await fetch(getSgxV0EcocashToCryptoUrl(), {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         walletAddress,
         payerPhone: phone,
@@ -548,17 +556,20 @@ export const adminCheckSgxPartnerHealth = action({
     }
 
     const apiKey = getSgxV0ApiKey();
-    if (!apiKey) {
+    if (shouldSendSgxV0AuthHeader() && !apiKey) {
       throw new Error(
         "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
       );
     }
 
+    const headers: Record<string, string> = {};
+    if (shouldSendSgxV0AuthHeader()) {
+      headers.Authorization = `Bearer ${apiKey}`;
+    }
+
     const res = await fetch(getSgxV0HealthUrl(), {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers,
     });
 
     const text = await res.text();

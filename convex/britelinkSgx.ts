@@ -20,19 +20,42 @@ export function getSgxV0BaseUrl(): string {
   );
 }
 
+/**
+ * Test mode: use open authless endpoints:
+ * - /v0/test/ecocash-to-crypto
+ * - /v0/test/crypto-to-ecocash
+ *
+ * Set SGX_V0_USE_TEST_ENDPOINTS=true to enable.
+ */
+export function useSgxV0TestEndpoints(): boolean {
+  return process.env.SGX_V0_USE_TEST_ENDPOINTS === "true";
+}
+
+/** Whether SGX requests should include Authorization Bearer. */
+export function shouldSendSgxV0AuthHeader(): boolean {
+  return !useSgxV0TestEndpoints();
+}
+
 /** POST — USDT → EcoCash (Penny automated withdrawals). */
 export function getSgxV0CryptoToEcocashUrl(): string {
-  return `${getSgxV0BaseUrl()}/v0/crypto-to-ecocash`;
+  const path = useSgxV0TestEndpoints()
+    ? "/v0/test/crypto-to-ecocash"
+    : "/v0/crypto-to-ecocash";
+  return `${getSgxV0BaseUrl()}${path}`;
 }
 
 /** POST — EcoCash → USDT (admin funding / player deposits). */
 export function getSgxV0EcocashToCryptoUrl(): string {
-  return `${getSgxV0BaseUrl()}/v0/ecocash-to-crypto`;
+  const path = useSgxV0TestEndpoints()
+    ? "/v0/test/ecocash-to-crypto"
+    : "/v0/ecocash-to-crypto";
+  return `${getSgxV0BaseUrl()}${path}`;
 }
 
 /** GET — verify Bearer is recognised (`auth.keyRecognized`, `auth.partner`). */
 export function getSgxV0HealthUrl(): string {
-  return `${getSgxV0BaseUrl()}/v0/health`;
+  const path = useSgxV0TestEndpoints() ? "/v0/test/ecocash-to-crypto" : "/v0/health";
+  return `${getSgxV0BaseUrl()}${path}`;
 }
 
 export function getSgxV0ApiKey(): string | undefined {

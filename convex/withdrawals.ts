@@ -13,6 +13,7 @@ import {
   getSgxV0ApiKey,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0OffRampChain,
+  shouldSendSgxV0AuthHeader,
 } from "./britelinkSgx";
 
 const MIN_USD = 0.5;
@@ -212,7 +213,7 @@ export const dispatchToSgx = internalAction({
     });
     if (!p || p.status !== "queued") return;
 
-    if (!apiKey) {
+    if (shouldSendSgxV0AuthHeader() && !apiKey) {
       await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
         payoutId,
         error:
@@ -222,12 +223,16 @@ export const dispatchToSgx = internalAction({
     }
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (shouldSendSgxV0AuthHeader()) {
+        headers.Authorization = `Bearer ${apiKey}`;
+      }
+
       const res = await fetch(sgxUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
+        headers,
         body: JSON.stringify({
           firstName: p.firstName,
           lastName: p.lastName,
