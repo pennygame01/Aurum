@@ -5,6 +5,7 @@
  *
  * Env:
  * - SGX_V0_BASE_URL — optional override (default https://sgxremit.com, no trailing slash)
+ * - SGX_V0_USE_TEST_ENDPOINTS=true — use `/v0/test/...` paths (dev only; prod should omit)
  *
  * Treasury / Tron payouts: PENNY_TREASURY_* in Convex dashboard.
  */
@@ -18,14 +19,25 @@ export function getSgxV0BaseUrl(): string {
   );
 }
 
-/** POST — EcoCash → USDT (fund wallet). Body: walletAddress, payerPhone, fiatAmount [, email]. */
+/** When true, POST paths use `/v0/test/...` instead of `/v0/...`. */
+export function useSgxV0TestEndpoints(): boolean {
+  return process.env.SGX_V0_USE_TEST_ENDPOINTS === "true";
+}
+
+/** POST — EcoCash → USDT (fund wallet). Body: walletAddress, payerPhone, fiatAmount [, email, cryptoAmount]. */
 export function getSgxV0EcocashToCryptoUrl(): string {
-  return `${getSgxV0BaseUrl()}/v0/ecocash-to-crypto`;
+  const path = useSgxV0TestEndpoints()
+    ? "/v0/test/ecocash-to-crypto"
+    : "/v0/ecocash-to-crypto";
+  return `${getSgxV0BaseUrl()}${path}`;
 }
 
 /** POST — USDT → EcoCash (cash out). Body: firstName, lastName, phone, intendedUsdAmount [, …]. */
 export function getSgxV0CryptoToEcocashUrl(): string {
-  return `${getSgxV0BaseUrl()}/v0/crypto-to-ecocash`;
+  const path = useSgxV0TestEndpoints()
+    ? "/v0/test/crypto-to-ecocash"
+    : "/v0/crypto-to-ecocash";
+  return `${getSgxV0BaseUrl()}${path}`;
 }
 
 export function getSgxToPennyCallbackExpectedBearer(): string | undefined {
@@ -54,5 +66,40 @@ export function formatSgxPartnerApiError(
   if (errMsg) {
     return `${prefix}: ${errMsg}`;
   }
+  const pf = data.partnerFlow;
+  if (pf && typeof pf === "object") {
+    const inst = (pf as Record<string, unknown>).instruction;
+    if (typeof inst === "string" && inst.trim()) {
+      return `${prefix}: ${inst.trim()}`;
+    }
+  }
+  const topInst = data.instruction;
+  if (typeof topInst === "string" && topInst.trim()) {
+    return `${prefix}: ${topInst.trim()}`;
+  }
   return `${prefix}: ${bodyText?.trim() || "unknown"}`;
+}
+
+/** Normalize `partnerFlow` from ecocash-to-crypto JSON for UI + polling. */
+export function parseSgxPartnerFlow(data: Record<string, unknown>): {
+  mode: string | null;
+  statusUrl: string | null;
+  pollEverySeconds: number;
+  optionalBrowserUrl: string | null;
+  instruction: string | null;
+} | null {
+  const pf = data.partnerFlow;
+  if (!pf || typeof pf !== "object") return null;
+  const o = pf as Record<string, unknown>;
+  const poll = o.pollEverySeconds;
+  const pollSec =
+    typeof poll === "number" && Number.isFinite(poll) && poll > 0 ? poll : 12;
+  return {
+    mode: typeof o.mode === "string" ? o.mode : null,
+    statusUrl: typeof o.statusUrl === "string" ? o.statusUrl : null,
+    pollEverySeconds: pollSec,
+    optionalBrowserUrl:
+      typeof o.optionalBrowserUrl === "string" ? o.optionalBrowserUrl : null,
+    instruction: typeof o.instruction === "string" ? o.instruction : null,
+  };
 }

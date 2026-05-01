@@ -7,7 +7,33 @@ import {
   getSgxV0BaseUrl,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0EcocashToCryptoUrl,
+  parseSgxPartnerFlow,
+  useSgxV0TestEndpoints,
 } from "./britelinkSgx";
+
+/** Limit SSRF when Convex polls SGX/Pesepay status URLs. */
+function assertSafeHttpsPartnerStatusUrl(urlStr: string): string {
+  let u: URL;
+  try {
+    u = new URL(urlStr.trim());
+  } catch {
+    throw new Error("Invalid status URL");
+  }
+  if (u.protocol !== "https:") {
+    throw new Error("status URL must use https");
+  }
+  const host = u.hostname.toLowerCase();
+  const allowed =
+    host === "sgxremit.com" ||
+    host.endsWith(".sgxremit.com") ||
+    host.endsWith(".pesepay.com") ||
+    host.includes("pesepay") ||
+    host.includes("chessa");
+  if (!allowed) {
+    throw new Error(`Refusing to fetch status URL host: ${host}`);
+  }
+  return u.toString();
+}
 
 function parseCsvEnv(name: string): string[] {
   const raw = process.env[name];
@@ -435,6 +461,7 @@ export const getSgxApiConfigStatus = query({
       ),
       hasTreasuryTronAddress: Boolean(process.env.PENNY_TREASURY_TRC20_ADDRESS),
       hasOnRampWalletBep20: Boolean(process.env.PENNY_ONRAMP_WALLET_BEP20),
+      usesTestEndpoints: useSgxV0TestEndpoints(),
     };
   },
 });
@@ -444,6 +471,7 @@ export const adminFundWalletViaEcocash = action({
     payerPhone: v.string(),
     fiatAmount: v.number(),
     email: v.optional(v.string()),
+    cryptoAmount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -480,6 +508,12 @@ export const adminFundWalletViaEcocash = action({
     };
     const email = args.email?.trim();
     if (email) payload.email = email;
+    if (args.cryptoAmount !== undefined) {
+      const c = Number(Number(args.cryptoAmount).toFixed(6));
+      if (Number.isFinite(c) && c >= 0) {
+        payload.cryptoAmount = c.toFixed(6);
+      }
+    }
 
     const res = await fetch(getSgxV0EcocashToCryptoUrl(), {
       method: "POST",
@@ -505,11 +539,60 @@ export const adminFundWalletViaEcocash = action({
       );
     }
 
+    let partnerFlow = parseSgxPartnerFlow(data);
+    const topInstruction =
+      typeof data.instruction === "string" ? data.instruction : null;
+    if (partnerFlow && topInstruction && !partnerFlow.instruction) {
+      partnerFlow = { ...partnerFlow, instruction: topInstruction };
+    }
+
     return {
       ok: data.ok === true || data.success === true,
       referenceNumber: data.referenceNumber ?? null,
       redirectUrl: data.redirectUrl ?? null,
       orderId: data.orderId ?? null,
+      partnerFlow,
+      instruction: partnerFlow?.instruction ?? topInstruction ?? null,
+      raw: data,
+    };
+  },
+});
+
+/** Poll `partnerFlow.statusUrl` once (admin-only). Client repeats every `pollEverySeconds`. */
+export const pollEcocashOnRampStatus = action({
+  args: { statusUrl: v.string() },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.subject) throw new Error("Not authenticated");
+
+    const userId = usersIdFromIdentitySubject(identity.subject);
+    const currentUser = await ctx.runQuery(internal.aurum.getUserByIdInternal, {
+      userId,
+    });
+    if (!currentUser || !isAdminUser(currentUser)) {
+      throw new Error("Unauthorized: Admin access required");
+    }
+
+    const safeUrl = assertSafeHttpsPartnerStatusUrl(args.statusUrl);
+    const res = await fetch(safeUrl, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    const text = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      // keep empty
+    }
+
+    return {
+      httpOk: res.ok,
+      httpStatus: res.status,
+      terminal: data.terminal === true,
+      status: typeof data.status === "string" ? data.status : null,
+      found:
+        data.found === true ? true : data.found === false ? false : null,
       raw: data,
     };
   },
