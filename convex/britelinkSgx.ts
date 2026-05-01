@@ -1,26 +1,17 @@
 /**
  * SGX Remit — Partner API v0 (server-to-server).
- * Withdrawals: POST /api/v0/crypto-to-ecocash with Authorization: Bearer <SGX_V0_API_KEY>.
+ * Canonical paths per Penny integration guide: `/v0/...` on `https://sgxremit.com`.
  *
- * **Where to put the key:** Off-ramp calls run from Convex (`dispatchToSgx`).
- * Set the bearer in the Convex deployment env (Dashboard → Settings → Environment Variables),
- * not in client or `NEXT_PUBLIC_*`.
+ * Convex env (never commit keys):
+ * - SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME — Bearer on every POST/GET to partner routes
+ * - SGX_V0_BASE_URL — optional override (no trailing slash)
  *
- * Variable names (first match wins):
- * - SGX_V0_API_KEY — generic name
- * - SGX_V0_PARTNER_PENNYGAME — name SGX uses for Penny; same value as the Bearer
+ * Health: GET `/v0/health` with same Bearer — confirms keyRecognized + partner.
  *
- * Optional: SGX_V0_BASE_URL, SGX_V0_OFFRAMP_CHAIN
- *
- * TRC20 auto-send to SGX paymentAddress (treasury) — "use node" action `treasuryTron:sendUsdtToSgxPayment`:
- * - PENNY_TREASURY_TRON_PRIVATE_KEY — 64-hex (no 0x) or value TronWeb accepts; never in client
- * - Optional: PENNY_TREASURY_TRC20_ADDRESS — must match the address for that key (e.g. TMZP…)
- * - Optional: TRON_FULL_HOST (default https://api.trongrid.io), TRON_GRID_API_KEY (TronGrid Pro)
- *
- * Separate (only if SGX POSTs to your /sgx/withdrawal-callback): SGX_PENNY_CALLBACK_BEARER
+ * Treasury / Tron: see PENNY_TREASURY_* in Convex dashboard.
  */
 
-export const SGX_V0_DEFAULT_ORIGIN = "https://www.sgxremit.com";
+export const SGX_V0_DEFAULT_ORIGIN = "https://sgxremit.com";
 
 export function getSgxV0BaseUrl(): string {
   return (process.env.SGX_V0_BASE_URL || SGX_V0_DEFAULT_ORIGIN).replace(
@@ -29,14 +20,19 @@ export function getSgxV0BaseUrl(): string {
   );
 }
 
-/** Full URL for USDT → EcoCash (Chessa) off-ramp. */
+/** POST — USDT → EcoCash (Penny automated withdrawals). */
 export function getSgxV0CryptoToEcocashUrl(): string {
-  return `${getSgxV0BaseUrl()}/api/v0/crypto-to-ecocash`;
+  return `${getSgxV0BaseUrl()}/v0/crypto-to-ecocash`;
 }
 
-/** Full URL for EcoCash → USDT on-ramp. */
+/** POST — EcoCash → USDT (admin funding / player deposits). */
 export function getSgxV0EcocashToCryptoUrl(): string {
-  return `${getSgxV0BaseUrl()}/api/v0/ecocash-to-crypto`;
+  return `${getSgxV0BaseUrl()}/v0/ecocash-to-crypto`;
+}
+
+/** GET — verify Bearer is recognised (`auth.keyRecognized`, `auth.partner`). */
+export function getSgxV0HealthUrl(): string {
+  return `${getSgxV0BaseUrl()}/v0/health`;
 }
 
 export function getSgxV0ApiKey(): string | undefined {
@@ -45,15 +41,36 @@ export function getSgxV0ApiKey(): string | undefined {
   );
 }
 
-/** Example docs use "Tron"; SGX can advise if BSC normalisation is required. */
+/** Off-ramp chain: "Tron" or "BNB Chain" per SGX docs. */
 export function getSgxV0OffRampChain(): string {
   return process.env.SGX_V0_OFFRAMP_CHAIN || "Tron";
 }
 
-/**
- * Incoming only: secret SGX sends on `Authorization` when POSTing `/sgx/withdrawal-callback`.
- * Not the same as the Partner v0 outbound key — set only if SGX implements this callback.
- */
 export function getSgxToPennyCallbackExpectedBearer(): string | undefined {
   return process.env.SGX_PENNY_CALLBACK_BEARER;
+}
+
+/**
+ * Human-readable error from SGX JSON body (401 hint, config errors, provider errors).
+ */
+export function formatSgxPartnerApiError(
+  endpointLabel: string,
+  status: number,
+  bodyText: string,
+  data: Record<string, unknown>,
+): string {
+  const prefix = `${endpointLabel} (${status})`;
+  const errMsg = typeof data.error === "string" ? data.error : "";
+  const hint = typeof data.hint === "string" ? data.hint : "";
+
+  if (status === 401 && hint) {
+    return `${prefix}: ${hint}`;
+  }
+  if (errMsg.startsWith("SGX config error")) {
+    return `${prefix}: ${errMsg}`;
+  }
+  if (errMsg) {
+    return `${prefix}: ${errMsg}`;
+  }
+  return `${prefix}: ${bodyText?.trim() || "unknown"}`;
 }

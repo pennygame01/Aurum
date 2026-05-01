@@ -9,6 +9,7 @@ import {
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
+  formatSgxPartnerApiError,
   getSgxV0ApiKey,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0OffRampChain,
@@ -247,7 +248,12 @@ export const dispatchToSgx = internalAction({
       if (!res.ok) {
         await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
           payoutId,
-          error: (data.error as string) || text || `SGX ${res.status}`,
+          error: formatSgxPartnerApiError(
+            "SGX crypto-to-ecocash",
+            res.status,
+            text,
+            data,
+          ),
         });
         return;
       }

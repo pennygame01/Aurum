@@ -1,38 +1,32 @@
-Convex production — env pull vs this codebase (no secret values in this file)
-================================================================================
+Convex production — env vs codebase (no secret values in this file)
+======================================================================
 
-ALREADY ON PROD (bunx convex env list --prod)
----------------------------------------------
-- SGX_V0_PARTNER_PENNYGAME  … Partner API v0 Bearer (Penny -> SGX)
+SGX URLs IN CODE (override base with SGX_V0_BASE_URL if needed)
+---------------------------------------------------------------
+- Default base: https://sgxremit.com  (no trailing slash)
+- POST /v0/ecocash-to-crypto   (admin EcoCash → USDT session)
+- POST /v0/crypto-to-ecocash   (automated withdrawal quote + funding)
+- GET  /v0/health             (admin “Verify key” on /admin)
 
-MISSING / STRONGLY RECOMMENDED FOR AUTO WITHDRAW + TRC20 TREASURY
-------------------------------------------------------------------
-1. PENNY_TREASURY_TRON_PRIVATE_KEY   [REQUIRED for auto-send]
-   64-hex private key of the Tron wallet that SENDS TRC20 USDT to SGX
-   paymentAddress. Set in Convex only. Do not 0x-prefix or do — code allows both.
+REQUIRED FOR SGX CALLS
+----------------------
+- SGX_V0_PARTNER_PENNYGAME or SGX_V0_API_KEY … Bearer for all partner routes
 
-2. PENNY_TREASURY_TRC20_ADDRESS   [optional but recommended]
-   Public base58 address (e.g. TMZP…) for that key — mismatch fails fast.
+FOR ADMIN “FUND WALLET” (ecocash-to-crypto)
+--------------------------------------------
+- PENNY_ONRAMP_WALLET_BEP20 … settlement wallet address (format per SGX partner config)
 
-3. TRON_GRID_API_KEY   [optional]
-   TronGrid “TRON-PRO-API-KEY” for higher rate limits / prod reliability.
+FOR AUTO WITHDRAW + TRC20 SEND TO SGX paymentAddress
+-----------------------------------------------------
+- PENNY_TREASURY_TRON_PRIVATE_KEY
+- PENNY_TREASURY_TRC20_ADDRESS (recommended — must match key)
 
-4. TRON_FULL_HOST   [optional]
-   Default is https://api.trongrid.io if unset.
+OPTIONAL
+--------
+- TRON_GRID_API_KEY, TRON_FULL_HOST
+- SGX_V0_OFFRAMP_CHAIN  ("Tron" or "BNB Chain")
+- SGX_PENNY_CALLBACK_BEARER  (only if SGX POSTs /sgx/withdrawal-callback)
+- ADMIN_USER_IDS or ADMIN_EMAILS  (comma-separated; extra admins without DB role)
 
-OPTIONAL (SGX / CORS / CALLBACKS)
---------------------------------
-- SGX_V0_BASE_URL          Default https://www.sgxremit.com
-- SGX_V0_OFFRAMP_CHAIN   Default "Tron"
-- SGX_PENNY_CALLBACK_BEARER   Only if SGX POSTs your /sgx/withdrawal-callback
-- SGX_V0_API_KEY           Same as SGX_V0_PARTNER_PENNYGAME; only if you use this name
-
-NOT NEEDED ON CONVEX IF ALREADY USING PARTNER KEY
--------------------------------------------------
-- SGX_V0_API_KEY   (redundant with SGX_V0_PARTNER_PENNYGAME)
-
-Set missing vars, e.g.:
-  bunx convex env set PENNY_TREASURY_TRON_PRIVATE_KEY "<value>" --prod
-  bunx convex env set PENNY_TREASURY_TRC20_ADDRESS "TMZP..." --prod
-
-Other env (e.g. PAYMENT_*, OPPWA) live in Vercel / Next, not in this list.
+DO NOT COMMIT SECRETS — set via:
+  bunx convex env set NAME "value" --prod

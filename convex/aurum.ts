@@ -1,14 +1,47 @@
 import { v } from "convex/values";
-import { query, mutation, action } from "./_generated/server";
-import { api } from "./_generated/api";
-import { getAuthUserId } from "@convex-dev/auth/server";
+import { query, mutation, action, internalQuery } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import {
+  formatSgxPartnerApiError,
   getSgxV0ApiKey,
   getSgxV0BaseUrl,
   getSgxV0CryptoToEcocashUrl,
   getSgxV0EcocashToCryptoUrl,
+  getSgxV0HealthUrl,
 } from "./britelinkSgx";
+
+function parseCsvEnv(name: string): string[] {
+  const raw = process.env[name];
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function isAdminUser(user: {
+  _id: Id<"users">;
+  role?: "player" | "admin" | "agent";
+  email?: string;
+}): boolean {
+  if (user.role === "admin") return true;
+  const allowedIds = parseCsvEnv("ADMIN_USER_IDS");
+  if (allowedIds.includes(String(user._id))) return true;
+  const allowedEmails = parseCsvEnv("ADMIN_EMAILS").map((e) =>
+    e.toLowerCase(),
+  );
+  if (user.email && allowedEmails.includes(user.email.toLowerCase())) return true;
+  return false;
+}
+
+/**
+ * Same rule as `getCurrentUser`: Convex Auth encodes the users row id in `subject`.
+ * Do not use `getAuthUserId` here — it can disagree with `subject` and fail admin checks.
+ */
+function usersIdFromIdentitySubject(subject: string): Id<"users"> {
+  return subject.split("|")[0] as Id<"users">;
+}
 
 /*
   Core functions for Aurum Capital – an enterprise-ready real-time betting platform.
@@ -288,9 +321,9 @@ export const recordAdminAction = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const userId = identity.subject.split("|")[0] as Id<"users">;
+    const userId = usersIdFromIdentitySubject(identity.subject);
     const user = await ctx.db.get(userId);
-    if (!user || user.role !== "admin") {
+    if (!user || !isAdminUser(user)) {
       throw new Error("Unauthorized: Admin access required");
     }
 
@@ -320,6 +353,22 @@ export const getCurrentUser = query({
   },
 });
 
+/** `/admin` gate: role admin or ADMIN_USER_IDS / ADMIN_EMAILS env allowlist. */
+export const getAdminAccess = query({
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return { authenticated: false as const, allowed: false as const };
+    }
+    const userId = usersIdFromIdentitySubject(identity.subject);
+    const user = await ctx.db.get(userId);
+    return {
+      authenticated: true as const,
+      allowed: Boolean(user && isAdminUser(user)),
+    };
+  },
+});
+
 export const getUserTransactions = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -345,7 +394,7 @@ export const getHouseWalletBalance = query({
 
     const currentUserId = identity.subject.split("|")[0] as Id<"users">;
     const currentUser = await ctx.db.get(currentUserId);
-    if (!currentUser || currentUser.role !== "admin") {
+    if (!currentUser || !isAdminUser(currentUser)) {
       return null;
     }
 
@@ -361,6 +410,13 @@ export const getHouseWalletBalance = query({
   },
 });
 
+export const getUserByIdInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.userId);
+  },
+});
+
 export const getSgxApiConfigStatus = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
@@ -368,7 +424,7 @@ export const getSgxApiConfigStatus = query({
 
     const currentUserId = identity.subject.split("|")[0] as Id<"users">;
     const currentUser = await ctx.db.get(currentUserId);
-    if (!currentUser || currentUser.role !== "admin") {
+    if (!currentUser || !isAdminUser(currentUser)) {
       return null;
     }
 
@@ -381,6 +437,7 @@ export const getSgxApiConfigStatus = query({
       hasOnRampWalletBep20: Boolean(process.env.PENNY_ONRAMP_WALLET_BEP20),
       onRampUrl: getSgxV0EcocashToCryptoUrl(),
       offRampUrl: getSgxV0CryptoToEcocashUrl(),
+      healthUrl: getSgxV0HealthUrl(),
       baseUrl: getSgxV0BaseUrl(),
     };
   },
@@ -394,12 +451,17 @@ export const adminFundWalletViaEcocash = action({
     email: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.subject) throw new Error("Not authenticated");
 
-    const currentUser = await ctx.runQuery(api.aurum.getCurrentUser);
-    if (!currentUser || currentUser.role !== "admin") {
-      throw new Error("Unauthorized: Admin access required");
+    const userId = usersIdFromIdentitySubject(identity.subject);
+    const currentUser = await ctx.runQuery(internal.aurum.getUserByIdInternal, {
+      userId,
+    });
+    if (!currentUser || !isAdminUser(currentUser)) {
+      throw new Error(
+        `Unauthorized: Admin access required (userId=${String(userId)} role=${String(currentUser?.role ?? "none")} email=${String(currentUser?.email ?? "none")})`,
+      );
     }
 
     const apiKey = getSgxV0ApiKey();
@@ -412,7 +474,7 @@ export const adminFundWalletViaEcocash = action({
     const walletAddress = process.env.PENNY_ONRAMP_WALLET_BEP20?.trim();
     if (!walletAddress) {
       throw new Error(
-        "Set PENNY_ONRAMP_WALLET_BEP20 (BEP-20 0x wallet) in Convex environment",
+        "Set PENNY_ONRAMP_WALLET_BEP20 (treasury / settlement wallet address per SGX partner config) in Convex environment",
       );
     }
 
@@ -450,15 +512,72 @@ export const adminFundWalletViaEcocash = action({
       // ignore parse errors and keep raw text for support
     }
     if (!res.ok) {
-      throw new Error((data.error as string) || text || `SGX ${res.status}`);
+      throw new Error(
+        formatSgxPartnerApiError(
+          "SGX ecocash-to-crypto",
+          res.status,
+          text,
+          data,
+        ),
+      );
     }
 
     return {
       ok: data.ok === true || data.success === true,
+      partner: typeof data.partner === "string" ? data.partner : null,
       referenceNumber: data.referenceNumber ?? null,
       redirectUrl: data.redirectUrl ?? null,
       orderId: data.orderId ?? null,
       raw: data,
+    };
+  },
+});
+
+export const adminCheckSgxPartnerHealth = action({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.subject) throw new Error("Not authenticated");
+
+    const userId = usersIdFromIdentitySubject(identity.subject);
+    const currentUser = await ctx.runQuery(internal.aurum.getUserByIdInternal, {
+      userId,
+    });
+    if (!currentUser || !isAdminUser(currentUser)) {
+      throw new Error("Unauthorized: Admin access required");
+    }
+
+    const apiKey = getSgxV0ApiKey();
+    if (!apiKey) {
+      throw new Error(
+        "Set SGX_V0_API_KEY or SGX_V0_PARTNER_PENNYGAME in Convex environment",
+      );
+    }
+
+    const res = await fetch(getSgxV0HealthUrl(), {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    const text = await res.text();
+    let data: Record<string, unknown> = {};
+    try {
+      data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      // ignore
+    }
+
+    if (!res.ok) {
+      throw new Error(
+        formatSgxPartnerApiError("SGX health", res.status, text, data),
+      );
+    }
+
+    return {
+      httpStatus: res.status,
+      body: data,
     };
   },
 });
