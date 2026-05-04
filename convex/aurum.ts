@@ -463,6 +463,16 @@ export const getUserByIdInternal = internalQuery({
   },
 });
 
+/** Internal-only admin gate for actions in other modules (on-chain reads, etc.). */
+export const internalIsAdminUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.userId);
+    if (!user) return false;
+    return isAdminUser(user);
+  },
+});
+
 export const getSgxApiConfigStatus = query({
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();

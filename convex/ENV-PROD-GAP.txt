@@ -16,6 +16,12 @@ FOR ADMIN “FUND WALLET” (ecocash-to-crypto)
 --------------------------------------------
 - PENNY_ONRAMP_WALLET_BEP20 … settlement wallet address (format per SGX partner config)
 
+FOR ADMIN “TREASURY USDT” DISPLAY (live BEP-20 balance on /admin)
+-----------------------------------------------------------------
+- PENNY_ONRAMP_WALLET_BEP20 … same address; Convex action calls BSC `balanceOf` (no private key).
+- Optional: PENNY_BSC_RPC_URL … default `https://bsc-dataseed.binance.org`
+- Optional: PENNY_BSC_USDT_CONTRACT … default BSC mainnet USDT `0x55d398326f99059fF775485246999027B3197955`
+
 FOR AUTO WITHDRAW + TRC20 SEND TO SGX paymentAddress
 -----------------------------------------------------
 - PENNY_TREASURY_TRON_PRIVATE_KEY
