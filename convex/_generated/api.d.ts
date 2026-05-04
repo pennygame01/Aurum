@@ -14,6 +14,7 @@ import type * as britelinkSgx from "../britelinkSgx.js";
 import type * as crons from "../crons.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
+import type * as onChainBalances from "../onChainBalances.js";
 import type * as session from "../session.js";
 import type * as sessionManager from "../sessionManager.js";
 import type * as sgxCallbackHttp from "../sgxCallbackHttp.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   helpers: typeof helpers;
   http: typeof http;
+  onChainBalances: typeof onChainBalances;
   session: typeof session;
   sessionManager: typeof sessionManager;
   sgxCallbackHttp: typeof sgxCallbackHttp;

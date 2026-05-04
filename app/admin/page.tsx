@@ -1,8 +1,17 @@
 "use client";
 
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth, useQuery, useAction } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+
+type ChainTreasury = {
+  balanceUsdt: number | null;
+  walletAddress: string | null;
+  contractAddress: string;
+  rpcHost: string;
+  error: string | null;
+};
 
 export default function AdminPage() {
   const { isLoading, isAuthenticated } = useConvexAuth();
@@ -10,6 +19,34 @@ export default function AdminPage() {
   const adminAccess = useQuery(api.aurum.getAdminAccess);
   const houseWallet = useQuery(api.aurum.getHouseWalletBalance);
   const sgx = useQuery(api.aurum.getSgxApiConfigStatus);
+  const fetchBscUsdt = useAction(api.onChainBalances.getTreasuryBscUsdtBalance);
+  const [chainTreasury, setChainTreasury] = useState<ChainTreasury | null>(
+    null,
+  );
+  const [chainLoading, setChainLoading] = useState(false);
+
+  const refreshChainTreasury = useCallback(async () => {
+    setChainLoading(true);
+    try {
+      const r = await fetchBscUsdt({});
+      setChainTreasury(r);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setChainTreasury({
+        balanceUsdt: null,
+        walletAddress: null,
+        contractAddress: "",
+        rpcHost: "",
+        error: msg,
+      });
+    } finally {
+      setChainLoading(false);
+    }
+  }, [fetchBscUsdt]);
+
+  useEffect(() => {
+    if (adminAccess?.allowed) void refreshChainTreasury();
+  }, [adminAccess?.allowed, refreshChainTreasury]);
 
   const fundUrl = sgx?.ecocashToCryptoUrl?.trim() ?? "";
 
@@ -79,8 +116,57 @@ export default function AdminPage() {
       <main className="max-w-lg mx-auto px-4 py-6 space-y-6">
         <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-6 space-y-6">
           <div>
-            <p className="text-sm text-slate-500 dark:text-slate-400">House wallet</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Treasury USDT (BSC BEP-20)
+            </p>
             <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums mt-1">
+              {chainLoading ? (
+                <span className="text-slate-400">Loading…</span>
+              ) : chainTreasury?.balanceUsdt != null ? (
+                `${chainTreasury.balanceUsdt.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 6,
+                })} USDT`
+              ) : (
+                "—"
+              )}
+            </p>
+            {chainTreasury?.walletAddress ? (
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono break-all">
+                {chainTreasury.walletAddress.slice(0, 10)}…
+                {chainTreasury.walletAddress.slice(-8)}
+              </p>
+            ) : null}
+            {chainTreasury?.rpcHost ? (
+              <p className="text-xs text-slate-400 mt-1">
+                RPC: {chainTreasury.rpcHost}
+              </p>
+            ) : null}
+            {chainTreasury?.error ? (
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                {chainTreasury.error}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void refreshChainTreasury()}
+              disabled={chainLoading}
+              className="mt-3 text-sm text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
+            >
+              Refresh on-chain balance
+            </button>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-3">
+              This reads live USDT from{" "}
+              <code className="text-[11px]">PENNY_ONRAMP_WALLET_BEP20</code> via
+              BSC RPC. No private key is used (only the public address).
+            </p>
+          </div>
+
+          <div className="border-t border-slate-200 dark:border-gray-800 pt-6">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              In-game house ledger (Convex)
+            </p>
+            <p className="text-xl font-semibold text-slate-700 dark:text-slate-200 tabular-nums mt-1">
               ${(houseWallet?.balance ?? 0).toFixed(2)}
             </p>
             {houseWallet && "warning" in houseWallet && houseWallet.warning ? (
