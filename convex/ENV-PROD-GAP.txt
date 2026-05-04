@@ -21,6 +21,11 @@ FOR AUTO WITHDRAW + TRC20 SEND TO SGX paymentAddress
 - PENNY_TREASURY_TRON_PRIVATE_KEY
 - PENNY_TREASURY_TRC20_ADDRESS (recommended — must match key)
 
+HOUSE BANK / POOL USER
+-----------------------
+- Hard-coded in code: `jh79qz8jbwqvxdwhybp06afxns7xfyyv` (`lib/house.ts` + `convex/aurum.ts`).
+  That row must exist in **Penny’s** Convex `users` table (import/sync if Penny uses a separate backend from SGX).
+
 OPTIONAL
 --------
 - TRON_GRID_API_KEY, TRON_FULL_HOST

@@ -1,0 +1,11 @@
+Google sign-in: auth:store — “ID wasn't valid base32” on db.get(verifier)
+==========================================================================
+
+Convex Auth stores OAuth state under authVerifiers. The Next handler passes `verifier` as the Convex document id.
+
+Typical causes:
+- NEXT_PUBLIC_CONVEX_URL (or deployed frontend env) points at a different Convex deployment than the one issuing cookies — verifier ids belong to another DB.
+- Stale cookies after switching Convex deployment or SITE_URL — clear site cookies for your Penny domain and try again.
+- CONVEX_SITE_URL / Auth proxy misconfigured vs production URLs.
+
+Fix: align frontend Convex URL with the Convex project hosting authTables; redeploy; users clear cookies once.

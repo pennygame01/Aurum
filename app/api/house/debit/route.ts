@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
+import { getHouseBankUserIdForServer } from "@/lib/house";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
-
-// Fixed house account ID
-const HOUSE_USER_ID = "ks72m74heawkx1p7n524fbtnt97mj6y1";
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     await convex.mutation(api.aurum.adminWithdrawFunds, {
-      userId: HOUSE_USER_ID,
+      userId: getHouseBankUserIdForServer(),
       amount,
       paymentMethod: "card-usd",
     });
