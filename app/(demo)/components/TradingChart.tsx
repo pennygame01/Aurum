@@ -8,6 +8,7 @@ import {
   Player,
   SessionResult,
 } from "../utils/aurumDemo";
+import { getHouseBankUserId } from "@/lib/house";
 
 interface TradingChartProps {
   onTradeComplete?: (tradeData: {
@@ -27,7 +28,7 @@ export default function TradingChart({
   onTradeComplete,
   onPlayersChange,
 }: TradingChartProps) {
-  const HOUSE_BANK_USER_ID = "ks72m74heawkx1p7n524fbtnt97mj6y1";
+  const HOUSE_BANK_USER_ID = getHouseBankUserId();
   // State from MarketChart
   const [currentPrice, setCurrentPrice] = useState(1.0825);
   const [priceHistory, setPriceHistory] = useState<number[]>([]);
