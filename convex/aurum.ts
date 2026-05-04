@@ -412,50 +412,6 @@ export const getUserTransactions = query({
   },
 });
 
-/** Hard-coded pool user — see `lib/house.ts` PENNY_HOUSE_BANK_USER_ID (must exist in this DB). */
-const PENNY_HOUSE_BANK_USER_ID = "jh79qz8jbwqvxdwhybp06afxns7xfyyv" as Id<"users">;
-
-/** Admin-only house wallet balance for pool row above. */
-export const getHouseWalletBalance = query({
-  args: {},
-  handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) return null;
-
-    const currentUserId = identity.subject.split("|")[0] as Id<"users">;
-    const currentUser = await ctx.db.get(currentUserId);
-    if (!currentUser || !isAdminUser(currentUser)) {
-      return null;
-    }
-
-    let houseUser = null;
-    try {
-      houseUser = await ctx.db.get(PENNY_HOUSE_BANK_USER_ID);
-    } catch {
-      return {
-        balance: 0,
-        userId: null,
-        warning:
-          "House user id is not a valid Convex users document id in this deployment.",
-      };
-    }
-
-    if (!houseUser) {
-      return {
-        balance: 0,
-        userId: null,
-        warning:
-          "No users row for PENNY_HOUSE_BANK_USER_ID — create/import this account in Convex Data → users or align deployments.",
-      };
-    }
-
-    return {
-      balance: houseUser.balance ?? 0,
-      userId: houseUser._id,
-    };
-  },
-});
-
 export const getUserByIdInternal = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
