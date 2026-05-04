@@ -63,10 +63,20 @@ async function jsonRpcCall(
   }
 }
 
+/** `10 ** exp` as bigint — avoids `10n` / bigint `**` (needs ES2020 in some builds). */
+function bigintPow10(exp: number): bigint {
+  let result = BigInt(1);
+  const ten = BigInt(10);
+  for (let i = 0; i < exp; i++) {
+    result = result * ten;
+  }
+  return result;
+}
+
 function hexUintToUsdtAmount(hex: string): number {
   const h = hex.startsWith("0x") ? hex.slice(2) : hex;
   const raw = BigInt("0x" + (h || "0"));
-  const scale = 10n ** BigInt(BSC_USDT_DECIMALS);
+  const scale = bigintPow10(BSC_USDT_DECIMALS);
   const whole = raw / scale;
   const frac = raw % scale;
   return Number(whole) + Number(frac) / Number(scale);
