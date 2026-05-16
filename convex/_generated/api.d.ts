@@ -11,6 +11,7 @@
 import type * as aurum from "../aurum.js";
 import type * as auth from "../auth.js";
 import type * as britelinkSgx from "../britelinkSgx.js";
+import type * as chessaBridge from "../chessaBridge.js";
 import type * as crons from "../crons.js";
 import type * as helpers from "../helpers.js";
 import type * as http from "../http.js";
@@ -18,6 +19,8 @@ import type * as onChainBalances from "../onChainBalances.js";
 import type * as session from "../session.js";
 import type * as sessionManager from "../sessionManager.js";
 import type * as sgxCallbackHttp from "../sgxCallbackHttp.js";
+import type * as treasuryBep20 from "../treasuryBep20.js";
+import type * as treasuryPayout from "../treasuryPayout.js";
 import type * as treasuryTron from "../treasuryTron.js";
 import type * as withdrawals from "../withdrawals.js";
 
@@ -31,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   aurum: typeof aurum;
   auth: typeof auth;
   britelinkSgx: typeof britelinkSgx;
+  chessaBridge: typeof chessaBridge;
   crons: typeof crons;
   helpers: typeof helpers;
   http: typeof http;
@@ -38,6 +42,8 @@ declare const fullApi: ApiFromModules<{
   session: typeof session;
   sessionManager: typeof sessionManager;
   sgxCallbackHttp: typeof sgxCallbackHttp;
+  treasuryBep20: typeof treasuryBep20;
+  treasuryPayout: typeof treasuryPayout;
   treasuryTron: typeof treasuryTron;
   withdrawals: typeof withdrawals;
 }>;

@@ -1,6 +1,5 @@
 import { v } from "convex/values";
 import {
-  internalAction,
   internalMutation,
   internalQuery,
   mutation,
@@ -8,10 +7,6 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import {
-  formatSgxPartnerApiError,
-  getSgxV0CryptoToEcocashUrl,
-} from "./britelinkSgx";
 
 const MIN_USD = 0.5;
 
@@ -27,15 +22,6 @@ function normalizeE164Zimbabwe(raw: string): string {
   if (t.startsWith("7") && t.length === 9) t = "+263" + t;
   if (!t.startsWith("+")) t = `+${t}`;
   return t;
-}
-
-/** Partner API v0 examples use 9-digit local form (e.g. 771234567). */
-function toSgxV0Phone(e164: string): string {
-  const t = e164.replace(/\s/g, "");
-  if (t.startsWith("+263")) return t.slice(4);
-  if (t.startsWith("263") && t.length >= 12) return t.slice(3);
-  if (t.startsWith("0") && t.length >= 9) return t.slice(1);
-  return t.replace(/^\+/, "");
 }
 
 export const getPayoutForAction = internalQuery({
@@ -200,137 +186,6 @@ export const markTreasuryFundingSuccess = internalMutation({
   },
 });
 
-export const dispatchToSgx = internalAction({
-  args: { payoutId: v.id("ecocashPayouts") },
-  handler: async (ctx, { payoutId }) => {
-    const sgxUrl = getSgxV0CryptoToEcocashUrl();
-    const p = await ctx.runQuery(internal.withdrawals.getPayoutForAction, {
-      payoutId,
-    });
-    if (!p || p.status !== "queued") return;
-
-    try {
-      const res = await fetch(sgxUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          firstName: p.firstName,
-          lastName: p.lastName,
-          phone: toSgxV0Phone(p.ecocashPhone),
-          intendedUsdAmount: p.amountUsd,
-          clientReference: p.idempotencyKey,
-        }),
-      });
-      const text = await res.text();
-      let data: Record<string, unknown> = {};
-      try {
-        data = text ? (JSON.parse(text) as Record<string, unknown>) : {};
-      } catch {
-        // ignore
-      }
-      if (!res.ok) {
-        await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-          payoutId,
-          error: formatSgxPartnerApiError(
-            "SGX crypto-to-ecocash",
-            res.status,
-            text,
-            data,
-          ),
-        });
-        return;
-      }
-      const orderIdRaw = data.orderId ?? data.convexOrderId;
-      const orderId =
-        typeof orderIdRaw === "string"
-          ? orderIdRaw
-          : orderIdRaw != null
-            ? String(orderIdRaw)
-            : "";
-      if (!orderId) {
-        await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-          payoutId,
-          error: "SGX v0 response missing orderId",
-        });
-        return;
-      }
-      const tronFloatTxid =
-        (data.fundingTxHash as string) ||
-        (data.tronTxid as string) ||
-        (data.txid as string) ||
-        undefined;
-      const sgxV0: {
-        paymentAddress?: string;
-        network?: string;
-        sendAmount?: number;
-        sendCurrency?: string;
-        receiveAmount?: number;
-        receiveCurrency?: string;
-        fee?: number;
-        chessaOrderId?: string;
-        chessaShortId?: string;
-      } = {};
-      if (typeof data.paymentAddress === "string")
-        sgxV0.paymentAddress = data.paymentAddress;
-      if (typeof data.network === "string") sgxV0.network = data.network;
-      if (typeof data.sendAmount === "number") sgxV0.sendAmount = data.sendAmount;
-      if (typeof data.sendCurrency === "string")
-        sgxV0.sendCurrency = data.sendCurrency;
-      if (typeof data.receiveAmount === "number")
-        sgxV0.receiveAmount = data.receiveAmount;
-      if (typeof data.receiveCurrency === "string")
-        sgxV0.receiveCurrency = data.receiveCurrency;
-      if (typeof data.fee === "number") sgxV0.fee = data.fee;
-      if (typeof data.chessaOrderId === "string")
-        sgxV0.chessaOrderId = data.chessaOrderId;
-      if (typeof data.chessaShortId === "string")
-        sgxV0.chessaShortId = data.chessaShortId;
-
-      const hasPrefundTx = Boolean(
-        tronFloatTxid &&
-          (typeof tronFloatTxid === "string" ? tronFloatTxid : "").length > 0,
-      );
-      if (!hasPrefundTx) {
-        const toAddr = sgxV0.paymentAddress;
-        const amt = sgxV0.sendAmount;
-        if (typeof toAddr !== "string" || !toAddr.trim()) {
-          await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-            payoutId,
-            error: "SGX v0 response missing paymentAddress for TRC20 funding",
-          });
-          return;
-        }
-        if (typeof amt !== "number" || !Number.isFinite(amt) || amt <= 0) {
-          await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-            payoutId,
-            error: "SGX v0 response missing or invalid sendAmount for TRC20 funding",
-          });
-          return;
-        }
-      }
-
-      await ctx.runMutation(internal.withdrawals.markPayoutSgxSuccess, {
-        payoutId,
-        sgxOrderId: orderId,
-        tronFloatTxid,
-        ...(Object.keys(sgxV0).length > 0 ? { sgxV0 } : {}),
-      });
-
-      if (!hasPrefundTx) {
-        await ctx.scheduler.runAfter(0, internal.treasuryTron.sendUsdtToSgxPayment, {
-          payoutId,
-        });
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      await ctx.runMutation(internal.withdrawals.markPayoutFailed, {
-        payoutId,
-        error: msg,
-      });
-    }
-  },
-});
-
 /**
  * One-shot: deduct balance, create pending withdrawal + payout row, push to SGX in background.
  * Subscribe with useQuery on ecocashPayouts (getMyPayouts) for live status.
@@ -412,7 +267,11 @@ export const requestEcocashWithdrawal = mutation({
       updatedAt: now,
     });
 
-    await ctx.scheduler.runAfter(0, internal.withdrawals.dispatchToSgx, { payoutId });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.chessaBridge.runCryptoToEcocashForPayout,
+      { payoutId },
+    );
 
     return {
       deduped: false,

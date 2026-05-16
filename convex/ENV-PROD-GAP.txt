@@ -8,9 +8,17 @@ SGX URLs IN CODE (override base with SGX_V0_BASE_URL if needed)
 - POST /v0/crypto-to-ecocash   (automated withdrawal quote + funding)
 - GET  /v0/health             (admin “Verify key” on /admin)
 
-REQUIRED FOR SGX CALLS
-----------------------
-- SGX_V0_PARTNER_PENNYGAME or SGX_V0_API_KEY … Bearer for all partner routes
+REQUIRED FOR SGX HTTP (admin fund only — optional if using Chessa bridge below)
+-----------------------------------------------------------------------------
+- SGX_V0_PARTNER_BEARER … only for `adminFundWalletViaEcocash` HTTP to sgxremit.com
+
+WITHDRAW (EcoCash cash-out) — Chessa Convex bridge (no sgxremit.com API)
+------------------------------------------------------------------------
+- CHESSA_CONVEX_URL … Chessa deployment URL (prod example: https://silent-cricket-370.convex.cloud)
+- CHESSA_V0_INTERNAL_SECRET … must match Chessa Convex V0_API_INTERNAL_SECRET
+  (same value as Chessa Next SGX_V0_INTERNAL_ACTION_SECRET; built-in dev default in Chessa .env.example)
+- PENNY_TREASURY_TRON_PRIVATE_KEY + PENNY_TREASURY_TRC20_ADDRESS … auto-send USDT (Tron orders)
+- Optional PENNY_TREASURY_BEP20_PRIVATE_KEY + PENNY_TREASURY_BEP20_ADDRESS … if Chessa returns BSC address
 
 FOR ADMIN “FUND WALLET” (ecocash-to-crypto)
 --------------------------------------------

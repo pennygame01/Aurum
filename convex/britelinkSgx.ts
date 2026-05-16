@@ -74,6 +74,15 @@ export function isValidZwEcocashNineDigits(digits: string): boolean {
   return /^7\d{8}$/.test(digits);
 }
 
+/** EcoCash off-ramp: Chessa v0 expects 9-digit local (771234567). */
+export function e164ZimbabweToSgxPhone(e164: string): string {
+  const t = e164.replace(/\s/g, "");
+  if (t.startsWith("+263")) return t.slice(4);
+  if (t.startsWith("263") && t.length >= 12) return t.slice(3);
+  if (t.startsWith("0") && t.length >= 9) return t.slice(1);
+  return t.replace(/^\+/, "");
+}
+
 /**
  * Human-readable error from SGX JSON body (400 provider rejection, etc.).
  */

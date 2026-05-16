@@ -104,9 +104,9 @@ export default function WithdrawPage() {
 
         <section className="rounded-lg border border-slate-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 space-y-3">
           <p className="text-sm text-slate-600 dark:text-slate-300">
-            USDT → EcoCash via SGX. We POST{" "}
-            <span className="font-mono text-xs">crypto-to-ecocash</span>, then send USDT to the
-            address SGX returns.
+            Cash out to EcoCash: Penny creates the same Chessa remit order as SGX, then
+            automatically sends USDT from our treasury to Chessa&apos;s deposit address.
+            EcoCash is paid to the phone number below.
           </p>
           <input
             type="number"
